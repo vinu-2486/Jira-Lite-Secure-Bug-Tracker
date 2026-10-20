@@ -1,6 +1,8 @@
 HELP.md
 target/
 .mvn/wrapper/maven-wrapper.jar
+.env
+data/attachments/
 !**/src/main/**/target/
 !**/src/test/**/target/
 
