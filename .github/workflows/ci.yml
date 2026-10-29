@@ -1,0 +1,236 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend verify and lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DB_USER: jiralite_ci
+      DB_PASSWORD: ci-only-db-password
+      JIRALITE_ADMIN_EMAIL: ""
+      JIRALITE_ADMIN_PASSWORD: ""
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: jira_lite
+          MYSQL_USER: jiralite_ci
+          MYSQL_PASSWORD: ci-only-db-password
+          MYSQL_ROOT_PASSWORD: ci-only-root-password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -u root -pci-only-root-password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Wait for MySQL
+        run: |
+          for attempt in {1..30}; do
+            if mysqladmin ping -h 127.0.0.1 -P 3306 -u root -pci-only-root-password --silent; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "MySQL did not become ready." >&2
+          exit 1
+
+      - name: Run Java lint
+        working-directory: backend
+        run: |
+          sh ./mvnw --batch-mode --no-transfer-progress \
+            org.apache.maven.plugins:maven-checkstyle-plugin:3.6.0:check \
+            -Dcheckstyle.config.location=../.github/checkstyle.xml \
+            -Dcheckstyle.consoleOutput=true \
+            -Dcheckstyle.failOnViolation=true
+
+      - name: Run Maven verify with tests
+        working-directory: backend
+        run: sh ./mvnw --batch-mode --no-transfer-progress verify
+
+      - name: Upload backend reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: backend-reports
+          path: |
+            backend/target/surefire-reports/**
+            backend/target/checkstyle-result.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload backend application JAR
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: backend-application
+          path: backend/target/backend-0.0.1-SNAPSHOT.jar
+          if-no-files-found: error
+          retention-days: 7
+
+  frontend:
+    name: Frontend lint, tests, and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm test -- --watch=false
+
+      - name: Build frontend for production
+        working-directory: frontend
+        run: npm run build
+
+      - name: Upload Angular production output
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: frontend-production
+          path: frontend/dist/frontend/browser/**
+          if-no-files-found: error
+          retention-days: 7
+
+  dependency-scan:
+    name: Dependency vulnerability scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Required by current NVD API clients. A missing secret fails this scan
+      # explicitly instead of treating an unavailable data source as clean.
+      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Scan npm dependencies (high severity threshold)
+        id: npm-audit
+        continue-on-error: true
+        working-directory: frontend
+        run: npm audit --audit-level=high --json > npm-audit.json
+
+      - name: Classify npm scan result
+        if: always()
+        continue-on-error: true
+        working-directory: frontend
+        run: |
+          if [ "${{ steps.npm-audit.outcome }}" = "success" ]; then
+            exit 0
+          fi
+          if [ -s npm-audit.json ] && grep -q '"auditReportVersion"' npm-audit.json; then
+            echo "npm audit found vulnerabilities at or above the high threshold." >&2
+          else
+            echo "npm audit did not produce a report; this is a scanner or network failure." >&2
+          fi
+          exit 1
+
+      - name: Scan Maven dependencies (CVSS 7 threshold)
+        id: maven-audit
+        if: always()
+        continue-on-error: true
+        working-directory: backend
+        run: |
+          sh ./mvnw --batch-mode --no-transfer-progress \
+            org.owasp:dependency-check-maven:13.0.0:check \
+            -DfailBuildOnCVSS=7 \
+            -DnvdApiKey="$NVD_API_KEY" \
+            -DskipTestScope=false
+
+      - name: Classify Maven scan result
+        if: always()
+        continue-on-error: true
+        working-directory: backend
+        run: |
+          if [ "${{ steps.maven-audit.outcome }}" = "success" ]; then
+            exit 0
+          fi
+          if [ -s target/dependency-check-report.xml ] && grep -q '<vulnerability' target/dependency-check-report.xml; then
+            echo "Maven dependency-check found vulnerabilities at or above CVSS 7." >&2
+          else
+            echo "Maven dependency-check did not produce a vulnerability report; this is a scanner or network failure." >&2
+          fi
+          exit 1
+
+      - name: Fail if dependency scans found vulnerabilities or failed
+        if: always()
+        run: |
+          if [ "${{ steps.npm-audit.outcome }}" != "success" ]; then
+            echo "npm dependency scan failed or found high-severity vulnerabilities." >&2
+            exit 1
+          fi
+          if [ "${{ steps.maven-audit.outcome }}" != "success" ]; then
+            echo "Maven dependency scan failed or found CVSS 7+ vulnerabilities." >&2
+            exit 1
+          fi
+
+      - name: Upload dependency scan reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dependency-scan-reports
+          path: |
+            frontend/npm-audit.json
+            backend/target/dependency-check-report.*
+          if-no-files-found: warn
+          retention-days: 7

@@ -1,0 +1,81 @@
+<main class="auth-page">
+  <section class="auth-panel">
+    <a class="brand auth-brand" routerLink="/" aria-label="JILA home"
+      ><span class="brand-mark">J</span><span>JILA</span></a
+    >
+    <div class="auth-form-wrap">
+      <p class="auth-eyebrow">Welcome back</p>
+      <h1>Log in.</h1>
+      <p class="auth-subtitle">Return to a clearer view of your team's work.</p>
+      <p *ngIf="successMessage" class="form-success" role="status">{{ successMessage }}</p>
+      <form class="auth-form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
+        <div class="field">
+          <label for="login-email">Email</label
+          ><input
+            id="login-email"
+            type="email"
+            autocomplete="email"
+            formControlName="email"
+            [attr.aria-invalid]="form.controls.email.invalid && form.controls.email.touched"
+            aria-describedby="login-email-error"
+          />
+          <span
+            *ngIf="form.controls.email.invalid && form.controls.email.touched"
+            id="login-email-error"
+            class="field-error"
+            >Enter a valid email address.</span
+          >
+        </div>
+        <div class="field">
+          <label for="login-password">Password</label>
+          <div class="password-input">
+            <input
+              id="login-password"
+              [type]="showPassword ? 'text' : 'password'"
+              autocomplete="current-password"
+              formControlName="password"
+              [attr.aria-invalid]="form.controls.password.invalid && form.controls.password.touched"
+              aria-describedby="login-password-error"
+            /><button
+              type="button"
+              class="password-toggle"
+              (click)="showPassword = !showPassword"
+              [attr.aria-label]="showPassword ? 'Hide password' : 'Show password'"
+            >
+              {{ showPassword ? 'Hide' : 'Show' }}
+            </button>
+          </div>
+          <span
+            *ngIf="form.controls.password.invalid && form.controls.password.touched"
+            id="login-password-error"
+            class="field-error"
+            >Password is required.</span
+          >
+        </div>
+        <p *ngIf="errorMessage" class="form-error" role="alert">{{ errorMessage }}</p>
+        <button class="submit-button" type="submit" [disabled]="submitting">
+          {{ submitting ? 'Signing in…' : 'Log in' }}
+        </button>
+      </form>
+      <p class="auth-switch">New to JILA? <a routerLink="/register">Create an account</a></p>
+    </div>
+  </section>
+  <aside class="auth-aside">
+    <div class="auth-illustration">
+      <p class="aside-label">Example / a focused workspace</p>
+      <div class="aside-card">
+        <div class="aside-top"><span>JILA / Meadow</span><span>3 open</span></div>
+        <div class="aside-content">
+          <h2>Make the next step visible.</h2>
+          <p>Keep reports, owners and progress close enough to act on.</p>
+          <div class="aside-row"><i>01</i><span>Report the issue</span></div>
+          <div class="aside-row"><i>02</i><span>Give it an owner</span></div>
+          <div class="aside-row"><i>03</i><span>Move it forward</span></div>
+        </div>
+      </div>
+      <p class="auth-footnote">
+        Product capabilities shown here are planned. This is an illustrative view.
+      </p>
+    </div>
+  </aside>
+</main>

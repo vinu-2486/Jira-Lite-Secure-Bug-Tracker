@@ -1,0 +1,133 @@
+<main class="auth-page">
+  <section class="auth-panel">
+    <a class="brand auth-brand" routerLink="/" aria-label="JILA home"
+      ><span class="brand-mark">J</span><span>JILA</span></a
+    >
+    <div class="auth-form-wrap">
+      <p class="auth-eyebrow">A clear start</p>
+      <h1>Create account.</h1>
+      <p class="auth-subtitle">Set up a place for your team to keep bugs moving.</p>
+      <form class="auth-form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
+        <div class="field">
+          <label for="register-name">Display name</label
+          ><input
+            id="register-name"
+            type="text"
+            autocomplete="name"
+            maxlength="100"
+            formControlName="displayName"
+            [attr.aria-invalid]="
+              form.controls.displayName.invalid && form.controls.displayName.touched
+            "
+            aria-describedby="register-name-error"
+          /><span
+            *ngIf="form.controls.displayName.invalid && form.controls.displayName.touched"
+            id="register-name-error"
+            class="field-error"
+            >Display name is required and must be 100 characters or fewer.</span
+          >
+        </div>
+        <div class="field">
+          <label for="register-email">Email</label
+          ><input
+            id="register-email"
+            type="email"
+            autocomplete="email"
+            maxlength="254"
+            formControlName="email"
+            [attr.aria-invalid]="form.controls.email.invalid && form.controls.email.touched"
+            aria-describedby="register-email-error"
+          /><span
+            *ngIf="form.controls.email.invalid && form.controls.email.touched"
+            id="register-email-error"
+            class="field-error"
+            >Enter a valid email address.</span
+          >
+        </div>
+        <div class="field">
+          <label for="register-password">Password</label>
+          <div class="password-input">
+            <input
+              id="register-password"
+              [type]="showPassword ? 'text' : 'password'"
+              autocomplete="new-password"
+              formControlName="password"
+              [attr.aria-invalid]="form.controls.password.invalid && form.controls.password.touched"
+              aria-describedby="register-password-error"
+            /><button
+              type="button"
+              class="password-toggle"
+              (click)="showPassword = !showPassword"
+              [attr.aria-label]="showPassword ? 'Hide password' : 'Show password'"
+            >
+              {{ showPassword ? 'Hide' : 'Show' }}
+            </button>
+          </div>
+          <span
+            *ngIf="form.controls.password.invalid && form.controls.password.touched"
+            id="register-password-error"
+            class="field-error"
+            >Use 12 to 72 characters.</span
+          >
+        </div>
+        <div class="field">
+          <label for="register-confirm">Confirm password</label>
+          <div class="password-input">
+            <input
+              id="register-confirm"
+              [type]="showConfirmPassword ? 'text' : 'password'"
+              autocomplete="new-password"
+              formControlName="confirmPassword"
+              [attr.aria-invalid]="
+                (form.controls.confirmPassword.invalid || form.hasError('passwordMismatch')) &&
+                form.controls.confirmPassword.touched
+              "
+              aria-describedby="register-confirm-error"
+            /><button
+              type="button"
+              class="password-toggle"
+              (click)="showConfirmPassword = !showConfirmPassword"
+              [attr.aria-label]="
+                showConfirmPassword ? 'Hide password confirmation' : 'Show password confirmation'
+              "
+            >
+              {{ showConfirmPassword ? 'Hide' : 'Show' }}
+            </button>
+          </div>
+          <span
+            *ngIf="
+              form.controls.confirmPassword.touched &&
+              (form.controls.confirmPassword.invalid || form.hasError('passwordMismatch'))
+            "
+            id="register-confirm-error"
+            class="field-error"
+            >Passwords must match.</span
+          >
+        </div>
+        <p *ngIf="errorMessage" class="form-error" role="alert">{{ errorMessage }}</p>
+        <button class="submit-button" type="submit" [disabled]="submitting">
+          {{ submitting ? 'Creating account…' : 'Create account' }}
+        </button>
+      </form>
+      <p class="auth-switch">Already have an account? <a routerLink="/login">Log in</a></p>
+    </div>
+  </section>
+  <aside class="auth-aside">
+    <div class="auth-illustration">
+      <p class="aside-label">Planned / your team's view</p>
+      <div class="aside-card">
+        <div class="aside-top"><span>JILA / Meadow</span><span>Team space</span></div>
+        <div class="aside-content">
+          <h2>Start with a shared language.</h2>
+          <p>Small teams can keep the details close and the process light.</p>
+          <div class="aside-row"><i>✓</i><span>Clear ownership</span></div>
+          <div class="aside-row"><i>✓</i><span>Readable priorities</span></div>
+          <div class="aside-row"><i>✓</i><span>A visible finish line</span></div>
+        </div>
+      </div>
+      <p class="auth-footnote">
+        Product capabilities shown here are planned. This is an illustrative view.
+      </p>
+    </div>
+  </aside>
+</main>
