@@ -11,6 +11,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.List;
+
 @Service
 public class BugService {
 
@@ -89,5 +91,25 @@ public class BugService {
         bugs.save(bug);
 
         return BugResponse.from(bug);
+    }
+
+    @Transactional(readOnly = true)
+    public List<BugResponse> listBugs(Long projectId, Long actorId) {
+        projects.findById(projectId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Project not found"
+                ));
+
+        if (!members.existsByProjectIdAndUserId(projectId, actorId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Project not found"
+            );
+        }
+
+        return bugs.findAllByProjectIdOrderByCreatedAtDesc(projectId).stream()
+                .map(BugResponse::from)
+                .toList();
     }
 }

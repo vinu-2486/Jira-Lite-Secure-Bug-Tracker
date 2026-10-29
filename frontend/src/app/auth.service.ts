@@ -55,6 +55,10 @@ export class AuthService {
     );
   }
 
+  logout(): Observable<void> {
+    return this.http.post<void>('/api/auth/logout', {}).pipe(tap(() => this.currentUser.set(null)));
+  }
+
   private bootstrapCsrf(): Observable<AuthUser | null> {
     return this.refreshSession();
   }

@@ -1,0 +1,400 @@
+<div class="workspace-shell">
+  <header class="workspace-header">
+    <a class="brand" routerLink="/" aria-label="JILA home"
+      ><span class="brand-mark">J</span><span>JILA</span></a
+    >
+    <div class="header-user">
+      <span>{{ auth.currentUser()?.displayName }}</span
+      ><button type="button" (click)="logout()">Log out</button>
+    </div>
+  </header>
+
+  <div class="workspace-layout">
+    <aside class="project-sidebar" aria-label="Workspace navigation">
+      <nav class="side-nav" aria-label="Workspace sections">
+        <a class="side-nav-item active" href="#dashboard">▦ <span>Dashboard</span></a>
+        <a class="side-nav-item" href="#issues">≡ <span>Issues</span></a>
+      </nav>
+      <div class="sidebar-heading">
+        <span>Projects</span><span class="sidebar-caption">Your view</span>
+      </div>
+      <button
+        type="button"
+        class="project-item demo-project"
+        [class.selected]="mode === 'demo'"
+        (click)="switchToDemo()"
+      >
+        <span class="project-key">DEMO</span><span>Demo workspace</span>
+      </button>
+      <div *ngIf="loadingProjects" class="sidebar-state">Loading projects…</div>
+      <div *ngIf="projectsError" class="sidebar-error" role="alert">{{ projectsError }}</div>
+      <div
+        *ngIf="!loadingProjects && !projectsError && projects.length === 0"
+        class="sidebar-state"
+      >
+        No projects available
+      </div>
+      <button
+        *ngFor="let project of projects"
+        type="button"
+        class="project-item"
+        [class.selected]="mode === 'real' && selectedProject?.id === project.id"
+        (click)="selectProject(project)"
+      >
+        <span class="project-key">{{ project.key }}</span
+        ><span>{{ project.name }}</span>
+      </button>
+      <p class="sidebar-note">Project creation is <strong>Planned</strong>.</p>
+    </aside>
+
+    <main class="dashboard-area" id="dashboard">
+      <div *ngIf="mode === 'demo'" class="demo-banner" role="status">
+        <strong>Demo data - not saved</strong><span>These two records are illustrative only.</span
+        ><button type="button" (click)="switchToReal()" [disabled]="!projects.length">
+          View real projects
+        </button>
+      </div>
+      <div
+        *ngIf="mode === 'real' && !selectedProject && !loadingProjects && !projects.length"
+        class="no-project-state"
+      >
+        <p class="workspace-eyebrow">Real workspace</p>
+        <h1>No projects available</h1>
+        <p>You are not a member of any projects yet.</p>
+        <button type="button" class="secondary-button" (click)="switchToDemo()">
+          View demo workspace
+        </button>
+      </div>
+      <ng-container *ngIf="mode === 'demo' || selectedProject">
+        <div class="dashboard-heading">
+          <div>
+            <p class="workspace-eyebrow">
+              {{
+                mode === 'demo' ? 'Demo workspace' : selectedProject?.key + ' / Project workspace'
+              }}
+            </p>
+            <h1>{{ mode === 'demo' ? 'Dashboard' : selectedProject?.name }}</h1>
+            <p class="heading-copy">
+              {{
+                mode === 'demo'
+                  ? 'Two illustrative issues to show the workspace shape.'
+                  : selectedProject?.description || 'Issues loaded from this project.'
+              }}
+            </p>
+          </div>
+          <button
+            type="button"
+            class="create-button"
+            [disabled]="mode === 'demo'"
+            (click)="showCreateForm = !showCreateForm"
+          >
+            + Create issue
+          </button>
+        </div>
+        <div *ngIf="mode === 'demo'" class="demo-switch">
+          <span>Viewing demo records</span
+          ><button type="button" (click)="switchToReal()" [disabled]="!projects.length">
+            Switch to real projects
+          </button>
+        </div>
+        <form
+          *ngIf="showCreateForm && mode === 'real'"
+          class="create-form"
+          [formGroup]="createForm"
+          (ngSubmit)="submitBug()"
+          novalidate
+        >
+          <div class="create-form-heading">
+            <div>
+              <p class="workspace-eyebrow">Create issue</p>
+              <h2>New issue</h2>
+            </div>
+            <button
+              type="button"
+              class="close-button"
+              (click)="showCreateForm = false"
+              aria-label="Close create issue form"
+            >
+              ×
+            </button>
+          </div>
+          <div class="create-grid">
+            <div class="field">
+              <label for="issue-title">Title</label
+              ><input id="issue-title" formControlName="title" maxlength="120" /><span
+                *ngIf="createForm.controls.title.touched && createForm.controls.title.invalid"
+                class="field-error"
+                >Title must be between 5 and 120 characters.</span
+              >
+            </div>
+            <div class="field">
+              <label for="issue-description">Description</label
+              ><textarea
+                id="issue-description"
+                rows="4"
+                formControlName="description"
+                maxlength="5000"
+              ></textarea
+              ><span
+                *ngIf="
+                  createForm.controls.description.touched && createForm.controls.description.invalid
+                "
+                class="field-error"
+                >Description is required.</span
+              >
+            </div>
+            <div class="select-grid">
+              <div class="field">
+                <label for="issue-priority">Priority</label
+                ><select id="issue-priority" formControlName="priority">
+                  <option *ngFor="let priority of priorities" [value]="priority">
+                    {{ priority }}
+                  </option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="issue-severity">Severity</label
+                ><select id="issue-severity" formControlName="severity">
+                  <option *ngFor="let severity of severities" [value]="severity">
+                    {{ severity }}
+                  </option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <p *ngIf="createError" class="form-error" role="alert">{{ createError }}</p>
+          <button type="submit" class="create-submit" [disabled]="creating">
+            {{ creating ? 'Creating…' : 'Create issue' }}
+          </button>
+        </form>
+
+        <section class="summary-grid" aria-label="Issue summary">
+          <article class="summary-card">
+            <span>Total issues</span><strong>{{ totalCount }}</strong
+            ><small>Loaded records</small>
+          </article>
+          <article class="summary-card">
+            <span>Open</span><strong>{{ countByStatus('OPEN') }}</strong
+            ><small>Current dataset</small>
+          </article>
+          <article class="summary-card">
+            <span>In progress</span><strong>{{ countByStatus('IN_PROGRESS') }}</strong
+            ><small>Current dataset</small>
+          </article>
+          <article class="summary-card">
+            <span>Resolved / closed</span
+            ><strong>{{ countByStatus('RESOLVED') + countByStatus('CLOSED') }}</strong
+            ><small>Current dataset</small>
+          </article>
+        </section>
+
+        <section class="visual-grid" aria-label="Issue charts">
+          <article class="chart-card">
+            <div class="card-heading">
+              <h2>Issue status</h2>
+              <span>{{ mode === 'demo' ? 'Demo dataset' : 'Loaded dataset' }}</span>
+            </div>
+            <div class="status-chart">
+              <div
+                class="donut"
+                [style.--open-percent]="percentByStatus('OPEN') + '%'"
+                [style.--progress-percent]="percentByStatus('IN_PROGRESS') + '%'"
+              >
+                <strong>{{ totalCount }}</strong
+                ><small>Total</small>
+              </div>
+              <div class="legend">
+                <span
+                  ><i class="legend-dot open"></i>Open
+                  <b>{{ countByStatus('OPEN') }} / {{ percentByStatus('OPEN') }}%</b></span
+                ><span
+                  ><i class="legend-dot progress"></i>In progress
+                  <b
+                    >{{ countByStatus('IN_PROGRESS') }} / {{ percentByStatus('IN_PROGRESS') }}%</b
+                  ></span
+                ><span
+                  ><i class="legend-dot resolved"></i>Resolved
+                  <b>{{ countByStatus('RESOLVED') }} / {{ percentByStatus('RESOLVED') }}%</b></span
+                ><span
+                  ><i class="legend-dot closed"></i>Closed
+                  <b>{{ countByStatus('CLOSED') }} / {{ percentByStatus('CLOSED') }}%</b></span
+                >
+              </div>
+            </div>
+          </article>
+          <article class="chart-card">
+            <div class="card-heading">
+              <h2>Issue priority</h2>
+              <span>{{ mode === 'demo' ? 'Demo dataset' : 'Loaded dataset' }}</span>
+            </div>
+            <div class="bar-chart">
+              <div class="bar-item">
+                <span>{{ countByPriority('CRITICAL') }}</span
+                ><i
+                  class="bar critical"
+                  [style.height.%]="
+                    totalCount ? (countByPriority('CRITICAL') / totalCount) * 100 : 0
+                  "
+                ></i
+                ><small>Critical</small>
+              </div>
+              <div class="bar-item">
+                <span>{{ countByPriority('HIGH') }}</span
+                ><i
+                  class="bar high"
+                  [style.height.%]="totalCount ? (countByPriority('HIGH') / totalCount) * 100 : 0"
+                ></i
+                ><small>High</small>
+              </div>
+              <div class="bar-item">
+                <span>{{ countByPriority('MEDIUM') }}</span
+                ><i
+                  class="bar medium"
+                  [style.height.%]="totalCount ? (countByPriority('MEDIUM') / totalCount) * 100 : 0"
+                ></i
+                ><small>Medium</small>
+              </div>
+              <div class="bar-item">
+                <span>{{ countByPriority('LOW') }}</span
+                ><i
+                  class="bar low"
+                  [style.height.%]="totalCount ? (countByPriority('LOW') / totalCount) * 100 : 0"
+                ></i
+                ><small>Low</small>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="issues-section" id="issues">
+          <div class="issues-heading">
+            <div>
+              <p class="workspace-eyebrow">Issues</p>
+              <h2>Recent issues</h2>
+            </div>
+            <div class="issue-toolbar">
+              <label class="search-field"
+                ><span class="sr-only">Filter loaded issues by text</span
+                ><input
+                  type="search"
+                  placeholder="Filter loaded issues…"
+                  [(ngModel)]="filterText"
+                  [ngModelOptions]="{ standalone: true }" /></label
+              ><label
+                ><span class="sr-only">Filter by status</span
+                ><select [(ngModel)]="filterStatus" [ngModelOptions]="{ standalone: true }">
+                  <option value="">All statuses</option>
+                  <option *ngFor="let status of statuses" [value]="status">
+                    {{ formatStatus(status) }}
+                  </option>
+                </select></label
+              ><label
+                ><span class="sr-only">Filter by priority</span
+                ><select [(ngModel)]="filterPriority" [ngModelOptions]="{ standalone: true }">
+                  <option value="">All priorities</option>
+                  <option *ngFor="let priority of priorities" [value]="priority">
+                    {{ priority }}
+                  </option>
+                </select></label
+              >
+            </div>
+          </div>
+          <div *ngIf="loadingBugs && mode === 'real'" class="content-state">Loading issues…</div>
+          <div *ngIf="bugsError && mode === 'real'" class="content-state error-state" role="alert">
+            {{ bugsError }}
+          </div>
+          <div
+            *ngIf="!loadingBugs && !bugsError && displayedBugs.length === 0"
+            class="content-state"
+          >
+            <strong>No issues in this project.</strong
+            ><span>Issues loaded for this project will appear here.</span>
+          </div>
+          <div
+            *ngIf="
+              !loadingBugs && !bugsError && displayedBugs.length > 0 && filteredBugs.length === 0
+            "
+            class="content-state"
+          >
+            <strong>No matching issues.</strong
+            ><span>Try a different text, status or priority filter.</span>
+          </div>
+          <div
+            *ngIf="!loadingBugs && !bugsError && filteredBugs.length > 0"
+            class="issue-table-wrap"
+          >
+            <table class="issue-table">
+              <thead>
+                <tr>
+                  <th>Key</th>
+                  <th>Title</th>
+                  <th>Status</th>
+                  <th>Priority</th>
+                  <th>Severity</th>
+                  <th>Assignee</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  *ngFor="let bug of filteredBugs"
+                  [class.active]="selectedBug?.key === bug.key"
+                  (click)="selectBug(bug)"
+                  (keydown.enter)="selectBug(bug)"
+                  tabindex="0"
+                >
+                  <td class="bug-key">{{ bug.key }}</td>
+                  <td>
+                    <strong>{{ bug.title }}</strong
+                    ><small>{{
+                      mode === 'demo' ? 'Illustrative record' : 'Reporter ID ' + bug.reporterId
+                    }}</small>
+                  </td>
+                  <td>
+                    <span class="status-label" [class]="'status-' + bug.status.toLowerCase()">{{
+                      formatStatus(bug.status)
+                    }}</span>
+                  </td>
+                  <td>
+                    <span
+                      class="priority-label"
+                      [class]="'priority-' + bug.priority.toLowerCase()"
+                      >{{ bug.priority }}</span
+                    >
+                  </td>
+                  <td>{{ bug.severity }}</td>
+                  <td>{{ bug.assigneeId ? 'User ID ' + bug.assigneeId : 'Unassigned' }}</td>
+                  <td class="timestamp">{{ formatDate(bug.updatedAt) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </ng-container>
+    </main>
+
+    <aside class="activity-panel">
+      <div class="panel-heading">
+        <h2>Activity</h2>
+        <span>{{ mode === 'demo' ? 'Demo workspace' : 'Real workspace' }}</span>
+      </div>
+      <div class="activity-empty">
+        <span class="activity-icon">◷</span><strong>Activity isn't connected yet</strong>
+        <p>Comments, history and project activity are not available in the current API.</p>
+      </div>
+      <div class="filter-panel">
+        <div class="panel-heading">
+          <h2>Filters</h2>
+          <span>Loaded issues</span>
+        </div>
+        <p>Use the filters above the issue table to narrow this dataset.</p>
+        <button type="button" (click)="filterText = ''; filterStatus = ''; filterPriority = ''">
+          Clear filters
+        </button>
+      </div>
+      <p class="planned-side-note">
+        Assignment editing, comments, history and status changes are <strong>Planned</strong>.
+      </p>
+    </aside>
+  </div>
+</div>
