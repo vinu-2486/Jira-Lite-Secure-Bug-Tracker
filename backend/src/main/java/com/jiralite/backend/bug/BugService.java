@@ -229,7 +229,7 @@ public class BugService {
         if ((to == BugStatus.IN_PROGRESS && !assignee)
                 || (to == BugStatus.RESOLVED && !assignee)
                 || (to == BugStatus.CLOSED && !reporter && !lead)
-                || (to == BugStatus.REOPENED && (from == BugStatus.CLOSED ? !lead : !reporter && !lead))) {
+                || (to == BugStatus.REOPENED && !reporter && !lead)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Actor cannot perform this transition");
         }
         if ((to == BugStatus.CLOSED || to == BugStatus.REOPENED)
@@ -308,8 +308,10 @@ public class BugService {
         if (assignee && (bug.getStatus() == BugStatus.OPEN || bug.getStatus() == BugStatus.REOPENED)) actions.add("START");
         if (assignee && bug.getStatus() == BugStatus.IN_PROGRESS) actions.add("RESOLVE");
         if ((reporter || lead) && bug.getStatus() == BugStatus.RESOLVED) actions.add("CLOSE");
-        if ((reporter || lead) && bug.getStatus() == BugStatus.RESOLVED) actions.add("REOPEN");
-        if (lead && bug.getStatus() == BugStatus.CLOSED) actions.add("REOPEN");
+        if ((reporter || lead)
+                && (bug.getStatus() == BugStatus.RESOLVED || bug.getStatus() == BugStatus.CLOSED)) {
+            actions.add("REOPEN");
+        }
         return actions;
     }
 }
