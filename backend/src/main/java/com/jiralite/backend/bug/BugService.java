@@ -229,7 +229,7 @@ public class BugService {
         if ((to == BugStatus.IN_PROGRESS && !assignee)
                 || (to == BugStatus.RESOLVED && !assignee)
                 || (to == BugStatus.CLOSED && !reporter && !lead)
-                || (to == BugStatus.REOPENED && (from == BugStatus.CLOSED ? !lead : !reporter && !lead))) {
+                || (to == BugStatus.REOPENED && !reporter && !lead)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Actor cannot perform this transition");
         }
         if ((to == BugStatus.CLOSED || to == BugStatus.REOPENED)
