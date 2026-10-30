@@ -7,12 +7,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/admin/users")
 public class UserAdminController {
+    private static final Logger log = LoggerFactory.getLogger(UserAdminController.class);
     private final UserRepository users;
     private final PasswordEncoder encoder;
 
@@ -34,8 +37,10 @@ public class UserAdminController {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Email is already registered");
         }
         PasswordPolicy.validate(request.password());
-        return MeResponse.from(users.save(new User(email, request.displayName().trim(),
-                encoder.encode(request.password()), request.role())));
+        User created = users.save(new User(email, request.displayName().trim(),
+                encoder.encode(request.password()), request.role()));
+        log.info("admin_change action=CREATE_USER target={} outcome=SUCCESS", created.getId());
+        return MeResponse.from(created);
     }
 
     @PatchMapping("/{id}")
@@ -44,7 +49,9 @@ public class UserAdminController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
         if (request.role() != null) user.setRole(request.role());
         if (request.enabled() != null) user.setEnabled(request.enabled());
-        return MeResponse.from(users.save(user));
+        User updated = users.save(user);
+        log.info("admin_change action=UPDATE_USER target={} outcome=SUCCESS", id);
+        return MeResponse.from(updated);
     }
 
     public record CreateUserRequest(

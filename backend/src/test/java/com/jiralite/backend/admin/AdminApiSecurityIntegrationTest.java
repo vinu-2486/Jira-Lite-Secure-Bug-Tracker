@@ -78,6 +78,8 @@ class AdminApiSecurityIntegrationTest {
     void anonymousAdminRequestsAreUnauthorized() throws Exception {
         mvc.perform(get("/api/admin/users"))
                 .andExpect(status().isUnauthorized());
+        mvc.perform(get("/actuator/health"))
+                .andExpect(status().isUnauthorized());
         mvc.perform(post("/api/admin/users")
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -88,6 +90,8 @@ class AdminApiSecurityIntegrationTest {
     @Test
     void authenticatedNonAdminAdminRequestsAreForbidden() throws Exception {
         User user = saveUser(GlobalRole.USER);
+        mvc.perform(get("/actuator/health").with(as(user)))
+                .andExpect(status().isForbidden());
 
         mvc.perform(get("/api/admin/users").with(as(user)))
                 .andExpect(status().isForbidden());
@@ -292,6 +296,20 @@ class AdminApiSecurityIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"key\":\"OKAY\",\"name\":\"Created\",\"leadUserId\":" + lead.getId() + "}"))
                 .andExpect(status().isCreated());
+    }
+
+    @Test
+    void projectCreationRollsBackWhenLeadDoesNotExist() throws Exception {
+        User admin = saveUser(GlobalRole.APP_ADMIN);
+        long before = projects.count();
+
+        mvc.perform(post("/api/projects")
+                        .with(as(admin)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"key\":\"ROLL\",\"name\":\"Rolled back\",\"leadUserId\":999999999}"))
+                .andExpect(status().isNotFound());
+
+        org.assertj.core.api.Assertions.assertThat(projects.count()).isEqualTo(before);
     }
 
     private User saveUser(GlobalRole role) {

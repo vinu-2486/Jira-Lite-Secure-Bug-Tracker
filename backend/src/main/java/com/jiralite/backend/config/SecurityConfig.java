@@ -44,8 +44,9 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/signup").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/auth/google").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/integrations/github/webhook").permitAll()
-                .requestMatchers("/actuator/health").permitAll()
+                .requestMatchers("/actuator/health").hasRole("APP_ADMIN")
                 .requestMatchers("/api/admin/**").hasRole("APP_ADMIN")
                 .anyRequest().authenticated())           // deny by default
             .exceptionHandling(e -> e
