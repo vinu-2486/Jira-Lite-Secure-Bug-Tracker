@@ -22,13 +22,18 @@ jobs:
     env:
       DB_USER: jiralite_ci
       DB_PASSWORD: ci-only-db-password
+      JIRALITE_TEST_DB_URL: jdbc:mysql://127.0.0.1:3306/jira_lite_test
+      JIRALITE_TEST_DB_USERNAME: jiralite_ci
+      JIRALITE_TEST_DB_PASSWORD: ci-only-db-password
+      JIRALITE_TEST_DB_SCHEMA: jira_lite_test
+      JIRALITE_TEST_DB_PORT: "3306"
       JIRALITE_ADMIN_EMAIL: ""
       JIRALITE_ADMIN_PASSWORD: ""
     services:
       mysql:
         image: mysql:8.4
         env:
-          MYSQL_DATABASE: jira_lite
+          MYSQL_DATABASE: jira_lite_test
           MYSQL_USER: jiralite_ci
           MYSQL_PASSWORD: ci-only-db-password
           MYSQL_ROOT_PASSWORD: ci-only-root-password

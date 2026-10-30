@@ -196,4 +196,57 @@ class BugServiceTest {
                 .extracting("statusCode.value").isEqualTo(400);
         verify(bugs, never()).save(any());
     }
+
+    @Test
+    void reporterSeesReopenForClosedBug() {
+        assertThat(allowedActionsFor(BugStatus.CLOSED, 11L, ProjectRole.REPORTER, 11L))
+                .contains("REOPEN");
+    }
+
+    @Test
+    void projectLeadSeesReopenForClosedBug() {
+        assertThat(allowedActionsFor(BugStatus.CLOSED, 11L, ProjectRole.PROJECT_LEAD, 99L))
+                .contains("REOPEN");
+    }
+
+    @Test
+    void unrelatedMemberDoesNotSeeReopenForClosedBug() {
+        assertThat(allowedActionsFor(BugStatus.CLOSED, 12L, ProjectRole.DEVELOPER, 11L))
+                .doesNotContain("REOPEN");
+    }
+
+    @Test
+    void reporterAndLeadSeeReopenForResolvedBug() {
+        assertThat(allowedActionsFor(BugStatus.RESOLVED, 11L, ProjectRole.REPORTER, 11L))
+                .contains("REOPEN");
+        assertThat(allowedActionsFor(BugStatus.RESOLVED, 11L, ProjectRole.PROJECT_LEAD, 99L))
+                .contains("REOPEN");
+    }
+
+    private java.util.Set<String> allowedActionsFor(BugStatus status, Long actorId,
+                                                     ProjectRole role, Long reporterId) {
+        Project project = mock(Project.class);
+        ProjectMember member = mock(ProjectMember.class);
+        Bug bug = mock(Bug.class);
+        User reporter = mock(User.class);
+        when(project.getId()).thenReturn(7L);
+        when(member.getRole()).thenReturn(role);
+        when(members.findByProjectIdAndUserId(7L, actorId)).thenReturn(Optional.of(member));
+        when(projects.findById(7L)).thenReturn(Optional.of(project));
+        when(bugs.findById(8L)).thenReturn(Optional.of(bug));
+        when(bug.getProject()).thenReturn(project);
+        when(bug.getStatus()).thenReturn(status);
+        when(bug.getReporter()).thenReturn(reporter);
+        when(reporter.getId()).thenReturn(reporterId);
+        when(bug.getId()).thenReturn(8L);
+        when(bug.getBugKey()).thenReturn("JILA-8");
+        when(bug.getTitle()).thenReturn("title");
+        when(bug.getDescription()).thenReturn("description");
+        when(bug.getPriority()).thenReturn(BugPriority.MEDIUM);
+        when(bug.getSeverity()).thenReturn(BugSeverity.MAJOR);
+        when(bug.getVersion()).thenReturn(0L);
+        when(bug.getCreatedAt()).thenReturn(java.time.Instant.now());
+        when(bug.getUpdatedAt()).thenReturn(java.time.Instant.now());
+        return service.getBug(7L, 8L, actorId).allowedActions();
+    }
 }
