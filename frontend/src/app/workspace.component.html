@@ -44,6 +44,9 @@
       <nav class="side-nav" aria-label="Workspace sections">
         <a class="side-nav-item active" href="#dashboard">▦ <span>Dashboard</span></a>
         <a class="side-nav-item" href="#issues">≡ <span>Issues</span></a>
+        <a *ngIf="isAppAdmin" class="side-nav-item" href="#admin-controls">
+          ⚙ <span>Admin controls</span>
+        </a>
       </nav>
       <div class="sidebar-heading">
         <span>Projects</span><span class="sidebar-caption">Your view</span>
@@ -82,7 +85,62 @@
         <span class="project-key">{{ project.key }}</span
         ><span>{{ project.name }}</span>
       </button>
-      <p class="sidebar-note">Project creation is <strong>Planned</strong>.</p>
+      <button
+        *ngIf="isAppAdmin"
+        type="button"
+        class="project-retry"
+        (click)="showCreateProjectForm = !showCreateProjectForm"
+        [attr.aria-expanded]="showCreateProjectForm"
+      >
+        {{ showCreateProjectForm ? 'Cancel project creation' : '+ Create project' }}
+      </button>
+      <form
+        *ngIf="showCreateProjectForm && isAppAdmin"
+        id="project-create-form"
+        class="project-create-form detail-edit"
+        [formGroup]="createProjectForm"
+        (ngSubmit)="createProject()"
+        novalidate
+      >
+        <h2>Create project</h2>
+        <label for="project-key">Project key</label>
+        <input id="project-key" formControlName="key" maxlength="20" />
+        <span
+          *ngIf="createProjectForm.controls.key.touched && createProjectForm.controls.key.invalid"
+          class="field-error"
+          >Key is required (20 characters max).</span
+        >
+        <label for="project-name">Name</label>
+        <input id="project-name" formControlName="name" maxlength="100" />
+        <span
+          *ngIf="createProjectForm.controls.name.touched && createProjectForm.controls.name.invalid"
+          class="field-error"
+          >Name is required (100 characters max).</span
+        >
+        <label for="project-description">Description</label>
+        <textarea
+          id="project-description"
+          formControlName="description"
+          rows="3"
+          maxlength="500"
+        ></textarea>
+        <label for="project-lead-user">Lead user ID</label>
+        <input id="project-lead-user" type="number" min="1" step="1" formControlName="leadUserId" />
+        <span
+          *ngIf="
+            createProjectForm.controls.leadUserId.touched &&
+            createProjectForm.controls.leadUserId.invalid
+          "
+          class="field-error"
+          >Enter a lead user ID.</span
+        >
+        <p *ngIf="createProjectError" class="form-error" role="alert">
+          {{ createProjectError }}
+        </p>
+        <button type="submit" class="create-submit" [disabled]="creatingProject">
+          {{ creatingProject ? 'Creating…' : 'Create project' }}
+        </button>
+      </form>
     </aside>
 
     <main class="dashboard-area" id="dashboard">
@@ -107,6 +165,14 @@
         <p>You are not a member of any projects yet.</p>
         <button type="button" class="secondary-button" (click)="switchToDemo()">
           View demo workspace
+        </button>
+        <button
+          *ngIf="isAppAdmin"
+          type="button"
+          class="create-submit"
+          (click)="showCreateProjectForm = true"
+        >
+          Create project
         </button>
       </div>
       <ng-container *ngIf="mode === 'demo' || selectedProject">
@@ -135,6 +201,59 @@
             + Create issue
           </button>
         </div>
+        <section
+          *ngIf="mode === 'real' && selectedProject"
+          class="project-members chart-card"
+          aria-labelledby="project-members-heading"
+        >
+          <div class="card-heading">
+            <div>
+              <p class="workspace-eyebrow">Project access</p>
+              <h2 id="project-members-heading">Members</h2>
+            </div>
+            <span *ngIf="currentProjectRole" class="project-role">
+              Your role: {{ currentProjectRole }}
+            </span>
+          </div>
+          <p *ngIf="membersLoading" class="activity-state" role="status">
+            Loading project members…
+          </p>
+          <div *ngIf="membersError" class="activity-error form-error" role="alert">
+            <span>{{ membersError }}</span>
+            <button type="button" (click)="retryProjectMembers()">Retry members</button>
+          </div>
+          <p *ngIf="membersLoaded && projectMembers.length === 0" class="activity-state">
+            No project members were returned.
+          </p>
+          <ul *ngIf="membersLoaded && projectMembers.length > 0" class="project-member-list">
+            <li *ngFor="let member of projectMembers">
+              <span>{{ member.displayName }}</span>
+              <small>User ID {{ member.userId }} · {{ member.role }}</small>
+            </li>
+          </ul>
+          <form
+            *ngIf="canManageProjectMembers"
+            class="member-add-form detail-edit"
+            [formGroup]="addMemberForm"
+            (ngSubmit)="addProjectMember()"
+            novalidate
+          >
+            <h3>Add project member</h3>
+            <label for="member-user-id">User ID</label>
+            <input id="member-user-id" type="number" min="1" step="1" formControlName="userId" />
+            <label for="member-role">Project role</label>
+            <select id="member-role" formControlName="role">
+              <option *ngFor="let role of availableMemberRoles" [value]="role">{{ role }}</option>
+            </select>
+            <p *ngIf="addMemberError" class="form-error" role="alert">{{ addMemberError }}</p>
+            <p *ngIf="addMemberSuccess" class="member-success" role="status">
+              {{ addMemberSuccess }}
+            </p>
+            <button type="submit" [disabled]="addingMember">
+              {{ addingMember ? 'Adding…' : 'Add member' }}
+            </button>
+          </form>
+        </section>
         <div *ngIf="mode === 'demo'" class="demo-switch">
           <span>Viewing demo records</span
           ><button type="button" (click)="switchToReal()" [disabled]="!projects.length">
@@ -214,7 +333,8 @@
 
         <section class="summary-grid" aria-label="Issue summary">
           <article class="summary-card">
-            <span>Total issues</span><strong>{{ totalCount }}</strong
+            <span>{{ mode === 'demo' ? 'Demo issues' : 'Issues on this page' }}</span
+            ><strong>{{ totalCount }}</strong
             ><small>Loaded records</small>
           </article>
           <article class="summary-card">
@@ -236,7 +356,7 @@
           <article class="chart-card">
             <div class="card-heading">
               <h2>Issue status</h2>
-              <span>{{ mode === 'demo' ? 'Demo dataset' : 'Loaded dataset' }}</span>
+              <span>{{ mode === 'demo' ? 'Demo dataset' : 'Current page' }}</span>
             </div>
             <div class="status-chart">
               <div
@@ -269,7 +389,7 @@
           <article class="chart-card">
             <div class="card-heading">
               <h2>Issue priority</h2>
-              <span>{{ mode === 'demo' ? 'Demo dataset' : 'Loaded dataset' }}</span>
+              <span>{{ mode === 'demo' ? 'Demo dataset' : 'Current page' }}</span>
             </div>
             <div class="bar-chart">
               <div class="bar-item">
@@ -316,12 +436,12 @@
               <p class="workspace-eyebrow">Issues</p>
               <h2>Recent issues</h2>
             </div>
-            <div class="issue-toolbar">
+            <form class="issue-toolbar" (ngSubmit)="applyIssueFilters()">
               <label class="search-field"
-                ><span class="sr-only">Filter loaded issues by text</span
+                ><span class="sr-only">Filter issues by text</span
                 ><input
                   type="search"
-                  placeholder="Filter loaded issues…"
+                  placeholder="Search issues…"
                   [(ngModel)]="filterText"
                   [ngModelOptions]="{ standalone: true }" /></label
               ><label
@@ -340,28 +460,62 @@
                     {{ priority }}
                   </option>
                 </select></label
-              >
-            </div>
+              ><label
+                ><span class="sr-only">Filter by severity</span
+                ><select [(ngModel)]="filterSeverity" [ngModelOptions]="{ standalone: true }">
+                  <option value="">All severities</option>
+                  <option *ngFor="let severity of severities" [value]="severity">
+                    {{ severity }}
+                  </option>
+                </select></label
+              ><label
+                ><span class="sr-only">Sort issues by</span
+                ><select [(ngModel)]="sortField" [ngModelOptions]="{ standalone: true }">
+                  <option *ngFor="let field of sortFields" [value]="field">
+                    Sort: {{ formatSortField(field) }}
+                  </option>
+                </select></label
+              ><label
+                ><span class="sr-only">Sort direction</span
+                ><select [(ngModel)]="sortDirection" [ngModelOptions]="{ standalone: true }">
+                  <option value="desc">Descending</option>
+                  <option value="asc">Ascending</option>
+                </select></label
+              ><label
+                ><span class="sr-only">Issues per page</span
+                ><select [(ngModel)]="pageSize" [ngModelOptions]="{ standalone: true }">
+                  <option *ngFor="let size of pageSizes" [ngValue]="size">
+                    {{ size }} per page
+                  </option>
+                </select></label
+              ><button type="submit" [disabled]="loadingBugs && mode === 'real'">
+                Apply filters
+              </button>
+              <button type="button" (click)="clearIssueFilters()">Clear filters</button>
+            </form>
           </div>
           <div *ngIf="loadingBugs && mode === 'real'" class="content-state">Loading issues…</div>
           <div *ngIf="bugsError && mode === 'real'" class="content-state error-state" role="alert">
-            {{ bugsError }}
+            <span>{{ bugsError }}</span>
+            <button type="button" class="project-retry" (click)="retryBugs()">Retry issues</button>
+          </div>
+          <div *ngIf="noMoreIssues && bugs.length" class="content-state" role="status">
+            No more issues were returned. You are still on the previous page.
           </div>
           <div
             *ngIf="!loadingBugs && !bugsError && displayedBugs.length === 0"
             class="content-state"
           >
-            <strong>No issues in this project.</strong
-            ><span>Issues loaded for this project will appear here.</span>
-          </div>
-          <div
-            *ngIf="
-              !loadingBugs && !bugsError && displayedBugs.length > 0 && filteredBugs.length === 0
-            "
-            class="content-state"
-          >
-            <strong>No matching issues.</strong
-            ><span>Try a different text, status or priority filter.</span>
+            <strong>{{
+              hasActiveIssueFilters
+                ? 'No issues match these filters.'
+                : 'No issues in this project.'
+            }}</strong
+            ><span>{{
+              hasActiveIssueFilters
+                ? 'Adjust the filters and try again.'
+                : 'Issues loaded for this project will appear here.'
+            }}</span>
           </div>
           <div
             *ngIf="!loadingBugs && !bugsError && filteredBugs.length > 0"
@@ -416,8 +570,260 @@
               </tbody>
             </table>
           </div>
+          <nav
+            *ngIf="mode === 'real' && selectedProject"
+            class="issue-pagination"
+            aria-label="Issue pages"
+          >
+            <button
+              type="button"
+              (click)="previousBugPage()"
+              [disabled]="loadingBugs || !!bugsError || pageIndex === 0"
+            >
+              Previous
+            </button>
+            <span
+              >Page {{ pageIndex + 1
+              }}<ng-container *ngIf="!hasNextPage"> · last page</ng-container></span
+            >
+            <button
+              type="button"
+              (click)="nextBugPage()"
+              [disabled]="loadingBugs || !!bugsError || !hasNextPage"
+            >
+              Next
+            </button>
+          </nav>
         </section>
       </ng-container>
+      <section
+        *ngIf="isAppAdmin"
+        id="admin-controls"
+        class="admin-controls chart-card project-members"
+        aria-labelledby="admin-controls-heading"
+      >
+        <div class="card-heading">
+          <div>
+            <p class="workspace-eyebrow">Application administration</p>
+            <h2 id="admin-controls-heading">Admin controls</h2>
+          </div>
+          <span>APP_ADMIN</span>
+        </div>
+        <p class="heading-copy">
+          These controls use the existing admin API. Server-side authorization remains required.
+        </p>
+        <div class="admin-grid visual-grid">
+          <section aria-labelledby="admin-users-heading">
+            <h3 id="admin-users-heading">Users</h3>
+            <p *ngIf="adminUsersLoading" class="activity-state" role="status">Loading users…</p>
+            <div *ngIf="adminUsersError" class="activity-error form-error" role="alert">
+              <span>{{ adminUsersError }}</span>
+              <button type="button" (click)="retryAdminUsers()">Retry users</button>
+            </div>
+            <p *ngIf="adminUsersLoaded && adminUsers.length === 0" class="activity-state">
+              No users were returned.
+            </p>
+            <ul
+              *ngIf="adminUsersLoaded && adminUsers.length > 0"
+              class="admin-user-list project-member-list"
+            >
+              <li *ngFor="let user of adminUsers">
+                <div class="admin-user-details history-item">
+                  <strong>{{ user.displayName }}</strong>
+                  <span>{{ user.email }}</span>
+                  <small>User ID {{ user.id }} · Current global role: {{ user.role }}</small>
+                </div>
+                <div class="admin-user-controls detail-edit">
+                  <label [for]="'admin-role-' + user.id">Global role</label>
+                  <select
+                    [id]="'admin-role-' + user.id"
+                    [name]="'admin-role-' + user.id"
+                    [(ngModel)]="adminUserEdits[user.id].role"
+                    [ngModelOptions]="{ standalone: true }"
+                  >
+                    <option *ngIf="!adminUserEdits[user.id].role" [ngValue]="''" disabled>
+                      Unsupported role
+                    </option>
+                    <option *ngFor="let role of globalRoles" [ngValue]="role">{{ role }}</option>
+                  </select>
+                  <button
+                    type="button"
+                    (click)="updateAdminUser(user)"
+                    [disabled]="adminUserUpdates[user.id]?.loading"
+                  >
+                    {{ adminUserUpdates[user.id]?.loading ? 'Saving…' : 'Save role' }}
+                  </button>
+                  <p *ngIf="adminUserUpdates[user.id]?.error" class="form-error" role="alert">
+                    {{ adminUserUpdates[user.id].error }}
+                  </p>
+                </div>
+              </li>
+            </ul>
+            <form
+              class="detail-edit"
+              [formGroup]="createAdminUserForm"
+              (ngSubmit)="createAdminUser()"
+              novalidate
+            >
+              <h3>Create user</h3>
+              <label for="admin-user-email">Email</label>
+              <input id="admin-user-email" type="email" formControlName="email" maxlength="254" />
+              <span
+                *ngIf="
+                  createAdminUserForm.controls.email.touched &&
+                  createAdminUserForm.controls.email.invalid
+                "
+                class="field-error"
+              >
+                Enter a valid email address (254 characters max).
+              </span>
+              <label for="admin-user-display-name">Display name</label>
+              <input id="admin-user-display-name" formControlName="displayName" maxlength="100" />
+              <span
+                *ngIf="
+                  createAdminUserForm.controls.displayName.touched &&
+                  createAdminUserForm.controls.displayName.invalid
+                "
+                class="field-error"
+              >
+                Display name is required (100 characters max).
+              </span>
+              <label for="admin-user-password">Temporary password</label>
+              <input
+                id="admin-user-password"
+                type="password"
+                formControlName="password"
+                minlength="12"
+                maxlength="72"
+                autocomplete="new-password"
+              />
+              <span
+                *ngIf="
+                  createAdminUserForm.controls.password.touched &&
+                  createAdminUserForm.controls.password.invalid
+                "
+                class="field-error"
+              >
+                Password must be 12–72 characters.
+              </span>
+              <label for="admin-user-role">Global role</label>
+              <select id="admin-user-role" formControlName="role">
+                <option *ngFor="let role of globalRoles" [value]="role">{{ role }}</option>
+              </select>
+              <p *ngIf="createAdminUserSuccess" class="member-success" role="status">
+                {{ createAdminUserSuccess }}
+              </p>
+              <div *ngIf="createAdminUserError" class="activity-error form-error" role="alert">
+                <span>{{ createAdminUserError }}</span>
+                <button type="button" (click)="createAdminUser()">Retry create</button>
+              </div>
+              <button type="submit" [disabled]="creatingAdminUser">
+                {{ creatingAdminUser ? 'Creating…' : 'Create user' }}
+              </button>
+            </form>
+            <p class="admin-note">
+              Account enabled state is not returned by the checked-out user-list contract, so this
+              UI does not offer an enable/disable control.
+            </p>
+          </section>
+          <section aria-labelledby="github-binding-heading">
+            <h3 id="github-binding-heading">Bind GitHub repository</h3>
+            <p class="heading-copy">
+              Enter IDs supplied by the existing owner-side GitHub setup. This form does not install
+              an app, configure webhooks, or activate live tracking.
+            </p>
+            <form
+              class="detail-edit"
+              [formGroup]="bindGitHubForm"
+              (ngSubmit)="bindGitHubRepository()"
+              novalidate
+            >
+              <label for="github-project-id">Project ID</label>
+              <input
+                id="github-project-id"
+                type="number"
+                min="1"
+                step="1"
+                formControlName="projectId"
+              />
+              <span
+                *ngIf="
+                  bindGitHubForm.controls.projectId.touched &&
+                  bindGitHubForm.controls.projectId.invalid
+                "
+                class="field-error"
+              >
+                Enter a positive project ID.
+              </span>
+              <label for="github-installation-id">Installation ID</label>
+              <input
+                id="github-installation-id"
+                type="number"
+                min="1"
+                step="1"
+                formControlName="installationId"
+              />
+              <span
+                *ngIf="
+                  bindGitHubForm.controls.installationId.touched &&
+                  bindGitHubForm.controls.installationId.invalid
+                "
+                class="field-error"
+              >
+                Enter a positive installation ID.
+              </span>
+              <label for="github-repository-id">Repository ID</label>
+              <input
+                id="github-repository-id"
+                type="number"
+                min="1"
+                step="1"
+                formControlName="repositoryId"
+              />
+              <span
+                *ngIf="
+                  bindGitHubForm.controls.repositoryId.touched &&
+                  bindGitHubForm.controls.repositoryId.invalid
+                "
+                class="field-error"
+              >
+                Enter a positive repository ID.
+              </span>
+              <label for="github-owner">Owner</label>
+              <input id="github-owner" formControlName="owner" maxlength="100" />
+              <span
+                *ngIf="
+                  bindGitHubForm.controls.owner.touched && bindGitHubForm.controls.owner.invalid
+                "
+                class="field-error"
+              >
+                Enter an owner name (100 characters max).
+              </span>
+              <label for="github-repository-name">Repository name</label>
+              <input id="github-repository-name" formControlName="repositoryName" maxlength="100" />
+              <span
+                *ngIf="
+                  bindGitHubForm.controls.repositoryName.touched &&
+                  bindGitHubForm.controls.repositoryName.invalid
+                "
+                class="field-error"
+              >
+                Enter a repository name (100 characters max).
+              </span>
+              <p *ngIf="bindGitHubError" class="activity-error form-error" role="alert">
+                <span>{{ bindGitHubError }}</span>
+                <button type="button" (click)="retryGitHubBinding()">Retry binding</button>
+              </p>
+              <p *ngIf="githubBindingResult as binding" class="member-success" role="status">
+                Bound {{ binding.fullName }} to project {{ binding.projectId }}.
+              </p>
+              <button type="submit" [disabled]="bindingGitHubRepository">
+                {{ bindingGitHubRepository ? 'Binding…' : 'Bind repository' }}
+              </button>
+            </form>
+          </section>
+        </div>
+      </section>
     </main>
 
     <aside class="activity-panel">
@@ -443,6 +849,9 @@
         <ng-container *ngIf="selectedDetail && !detailLoading">
           <p class="detail-key">{{ selectedDetail.bug.key }}</p>
           <h3>{{ selectedDetail.bug.title }}</h3>
+          <p *ngIf="latestVersionNotice" class="member-success" role="status">
+            {{ latestVersionNotice }}
+          </p>
           <p class="detail-description">{{ selectedDetail.bug.description }}</p>
           <dl class="detail-meta">
             <div>
@@ -469,6 +878,15 @@
             </div>
           </dl>
           <div class="detail-actions" *ngIf="selectedDetail.allowedActions.length">
+            <p *ngIf="actionError" class="form-error" role="alert">{{ actionError }}</p>
+            <button
+              *ngIf="actionConflict"
+              type="button"
+              (click)="reloadIssueForReview()"
+              [disabled]="detailLoading"
+            >
+              Reload latest version for review
+            </button>
             <button
               type="button"
               *ngIf="selectedDetail.allowedActions.includes('START')"
@@ -527,7 +945,23 @@
             <select id="edit-severity" name="edit-severity" [(ngModel)]="editSeverity">
               <option *ngFor="let severity of severities" [value]="severity">{{ severity }}</option>
             </select>
-            <p *ngIf="editError" class="form-error" role="alert">{{ editError }}</p>
+            <p *ngIf="editConflict && editError" class="form-error" role="alert">
+              {{ editConflict }}
+            </p>
+            <p *ngIf="editConflict && !editError" class="member-success" role="status">
+              {{ editConflict }}
+            </p>
+            <p *ngIf="editError && !editConflict" class="form-error" role="alert">
+              {{ editError }}
+            </p>
+            <button
+              *ngIf="editConflict && editError && selectedDetail"
+              type="button"
+              (click)="reloadIssueForReview()"
+              [disabled]="detailLoading"
+            >
+              {{ detailLoading ? 'Reloading…' : 'Reload latest version for review' }}
+            </button>
             <button type="submit" [disabled]="editSubmitting">
               {{ editSubmitting ? 'Saving…' : 'Save changes' }}
             </button>
@@ -539,17 +973,42 @@
             novalidate
           >
             <h3>Assign issue</h3>
-            <label for="assignee-user-id">Existing project member user ID</label>
-            <input
-              id="assignee-user-id"
-              name="assignee-user-id"
-              type="number"
-              min="1"
-              [(ngModel)]="assigneeUserId"
-            />
-            <button type="submit" [disabled]="assignSubmitting || !assigneeUserId">
-              {{ assignSubmitting ? 'Assigning…' : 'Assign' }}
-            </button>
+            <p *ngIf="membersLoading" class="activity-state" role="status">
+              Loading assignable project members…
+            </p>
+            <div *ngIf="membersError" class="activity-error form-error" role="alert">
+              <span>{{ membersError }}</span>
+              <button type="button" (click)="retryProjectMembers()">Retry members</button>
+            </div>
+            <p *ngIf="membersLoaded && projectMembers.length === 0" class="activity-state">
+              No project members are available for assignment.
+            </p>
+            <ng-container *ngIf="membersLoaded && projectMembers.length > 0">
+              <label for="assignee-user-id">Project member</label>
+              <select
+                id="assignee-user-id"
+                name="assignee-user-id"
+                [(ngModel)]="assigneeUserId"
+                (ngModelChange)="assignError = ''"
+              >
+                <option [ngValue]="null">Select a project member</option>
+                <option *ngFor="let member of projectMembers" [ngValue]="member.userId">
+                  {{ member.displayName }} (User ID {{ member.userId }})
+                </option>
+              </select>
+              <p *ngIf="assignError" class="form-error" role="alert">{{ assignError }}</p>
+              <button
+                *ngIf="assignConflict"
+                type="button"
+                (click)="reloadIssueForReview()"
+                [disabled]="detailLoading"
+              >
+                Reload latest version for review
+              </button>
+              <button type="submit" [disabled]="assignSubmitting || assigneeUserId === null">
+                {{ assignSubmitting ? 'Assigning…' : 'Assign' }}
+              </button>
+            </ng-container>
           </form>
         </ng-container>
         <section class="detail-history" aria-labelledby="activity-timeline-heading">
@@ -634,19 +1093,6 @@
           </button>
         </section>
       </div>
-      <div class="filter-panel">
-        <div class="panel-heading">
-          <h2>Filters</h2>
-          <span>Loaded issues</span>
-        </div>
-        <p>Use the filters above the issue table to narrow this dataset.</p>
-        <button type="button" (click)="filterText = ''; filterStatus = ''; filterPriority = ''">
-          Clear filters
-        </button>
-      </div>
-      <p class="planned-side-note">
-        Assignment editing and status changes are <strong>Planned</strong>.
-      </p>
     </aside>
   </div>
 </div>

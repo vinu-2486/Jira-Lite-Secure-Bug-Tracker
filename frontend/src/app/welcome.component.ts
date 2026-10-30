@@ -10,12 +10,8 @@ import { AuthService } from './auth.service';
     <section>
       <p class="auth-eyebrow">Signed in</p>
       <h1>Welcome, {{ auth.currentUser()?.displayName }}.</h1>
-      <p>
-        Your session is active. The workspace is still being built, so there is no dashboard here
-        yet.
-      </p>
-      <span class="planned-note">Workspace dashboard <strong>Planned</strong></span
-      ><a class="button button-dark" routerLink="/">Back to JILA</a>
+      <p>Your session is active. Your workspace is ready.</p>
+      <a class="button button-dark" routerLink="/workspace">Open workspace</a>
     </section>
   </main>`,
   styleUrl: './auth-page.css',

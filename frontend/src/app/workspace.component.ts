@@ -15,12 +15,24 @@ import {
   Bug,
   BugDetail,
   BugPriority,
+  BugListQuery,
+  BugSortField,
   BugSeverity,
   BugStatus,
   Comment as BugComment,
   HistoryEvent,
+  AddProjectMemberRequest,
+  CreateProjectRequest,
   CreateBugRequest,
   Project,
+  ProjectMember,
+  ProjectRole,
+  SortDirection,
+  AdminUser,
+  BindGitHubRepositoryRequest,
+  CreateAdminUserRequest,
+  GlobalRole,
+  GitHubRepositoryBinding,
   WorkspaceService,
 } from './workspace.service';
 
@@ -49,14 +61,20 @@ export class WorkspaceComponent implements OnInit {
   commentSubmitting = false;
   commentSubmitError = '';
   actionSubmitting = false;
+  actionError = '';
+  actionConflict = false;
   editTitle = '';
   editDescription = '';
   editPriority: BugPriority = 'MEDIUM';
   editSeverity: BugSeverity = 'MAJOR';
   editSubmitting = false;
   editError = '';
-  assigneeUserId = '';
+  editConflict = '';
+  latestVersionNotice = '';
+  assigneeUserId: number | null = null;
   assignSubmitting = false;
+  assignError = '';
+  assignConflict = false;
   referenceBug: Bug | null = null;
   loadingProjects = false;
   loadingBugs = false;
@@ -65,12 +83,52 @@ export class WorkspaceComponent implements OnInit {
   filterText = '';
   filterStatus: BugStatus | '' = '';
   filterPriority: BugPriority | '' = '';
+  filterSeverity: BugSeverity | '' = '';
+  pageIndex = 0;
+  pageSize = 25;
+  hasNextPage = false;
+  noMoreIssues = false;
+  sortField: BugSortField = 'createdAt';
+  sortDirection: SortDirection = 'desc';
+  private failedBugPage: number | null = null;
   showCreateForm = false;
   creating = false;
   createError = '';
+  showCreateProjectForm = false;
+  creatingProject = false;
+  createProjectError = '';
+  addingMember = false;
+  addMemberError = '';
+  addMemberSuccess = '';
+  projectMembers: ProjectMember[] = [];
+  membersLoading = false;
+  membersLoaded = false;
+  membersError = '';
+  adminUsers: AdminUser[] = [];
+  adminUsersLoading = false;
+  adminUsersLoaded = false;
+  adminUsersError = '';
+  creatingAdminUser = false;
+  createAdminUserError = '';
+  createAdminUserSuccess = '';
+  adminUserEdits: Record<number, { role: GlobalRole | '' }> = {};
+  adminUserUpdates: Record<number, { loading: boolean; error: string }> = {};
+  bindingGitHubRepository = false;
+  bindGitHubError = '';
+  githubBindingResult: GitHubRepositoryBinding | null = null;
   private issueSelectionId = 0;
+  private projectSelectionId = 0;
+  private refreshProjectsAfterLoad = false;
   private commentsLoadSubscription?: Subscription;
   private historyLoadSubscription?: Subscription;
+  private membersLoadSubscription?: Subscription;
+  private adminUsersLoadSubscription?: Subscription;
+  private bugsLoadSubscription?: Subscription;
+  private bugsRequestId = 0;
+  readonly pageSizes = [25, 50, 100];
+  readonly sortFields: BugSortField[] = ['createdAt', 'updatedAt', 'title', 'status', 'priority'];
+  readonly projectRoles: ProjectRole[] = ['PROJECT_LEAD', 'DEVELOPER', 'REPORTER'];
+  readonly globalRoles: GlobalRole[] = ['USER', 'APP_ADMIN'];
   readonly priorities: BugPriority[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
   readonly severities: BugSeverity[] = ['TRIVIAL', 'MINOR', 'MAJOR', 'CRITICAL'];
   readonly statuses: BugStatus[] = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED', 'REOPENED'];
@@ -114,6 +172,29 @@ export class WorkspaceComponent implements OnInit {
     priority: FormControl<BugPriority>;
     severity: FormControl<BugSeverity>;
   }>;
+  readonly createProjectForm: FormGroup<{
+    key: FormControl<string>;
+    name: FormControl<string>;
+    description: FormControl<string>;
+    leadUserId: FormControl<number | null>;
+  }>;
+  readonly addMemberForm: FormGroup<{
+    userId: FormControl<number | null>;
+    role: FormControl<ProjectRole>;
+  }>;
+  readonly createAdminUserForm: FormGroup<{
+    email: FormControl<string>;
+    displayName: FormControl<string>;
+    password: FormControl<string>;
+    role: FormControl<GlobalRole>;
+  }>;
+  readonly bindGitHubForm: FormGroup<{
+    projectId: FormControl<number | null>;
+    installationId: FormControl<number | null>;
+    repositoryId: FormControl<number | null>;
+    owner: FormControl<string>;
+    repositoryName: FormControl<string>;
+  }>;
 
   constructor(
     private readonly formBuilder: FormBuilder,
@@ -127,18 +208,91 @@ export class WorkspaceComponent implements OnInit {
       priority: ['MEDIUM' as BugPriority, Validators.required],
       severity: ['MAJOR' as BugSeverity, Validators.required],
     });
+    this.createProjectForm = this.formBuilder.group({
+      key: this.formBuilder.nonNullable.control('', [
+        Validators.required,
+        Validators.maxLength(20),
+      ]),
+      name: this.formBuilder.nonNullable.control('', [
+        Validators.required,
+        Validators.maxLength(100),
+      ]),
+      description: this.formBuilder.nonNullable.control('', Validators.maxLength(500)),
+      leadUserId: this.formBuilder.control<number | null>(null, [
+        Validators.required,
+        Validators.min(1),
+        Validators.pattern(/^[1-9]\d*$/),
+      ]),
+    });
+    this.addMemberForm = this.formBuilder.group({
+      userId: this.formBuilder.control<number | null>(null, [
+        Validators.required,
+        Validators.min(1),
+        Validators.pattern(/^[1-9]\d*$/),
+      ]),
+      role: this.formBuilder.nonNullable.control<ProjectRole>('DEVELOPER', Validators.required),
+    });
+    this.createAdminUserForm = this.formBuilder.nonNullable.group({
+      email: ['', [Validators.required, Validators.email, Validators.maxLength(254)]],
+      displayName: ['', [Validators.required, Validators.pattern(/\S/), Validators.maxLength(100)]],
+      password: ['', [Validators.required, Validators.minLength(12), Validators.maxLength(72)]],
+      role: ['USER' as GlobalRole, Validators.required],
+    });
+    const positiveIdValidators = [
+      Validators.required,
+      Validators.min(1),
+      Validators.pattern(/^[1-9]\d*$/),
+    ];
+    this.bindGitHubForm = this.formBuilder.group({
+      projectId: this.formBuilder.control<number | null>(null, positiveIdValidators),
+      installationId: this.formBuilder.control<number | null>(null, positiveIdValidators),
+      repositoryId: this.formBuilder.control<number | null>(null, positiveIdValidators),
+      owner: this.formBuilder.nonNullable.control('', [
+        Validators.required,
+        Validators.pattern(/\S/),
+        Validators.maxLength(100),
+      ]),
+      repositoryName: this.formBuilder.nonNullable.control('', [
+        Validators.required,
+        Validators.pattern(/\S/),
+        Validators.maxLength(100),
+      ]),
+    });
   }
 
   ngOnInit(): void {
     this.selectedBug = this.demoBugs[0];
     this.loadProjects();
+    if (this.isAppAdmin) this.loadAdminUsers();
   }
 
   get displayedBugs(): Bug[] {
     return this.mode === 'demo' ? this.demoBugs : this.bugs;
   }
 
+  get isAppAdmin(): boolean {
+    return this.auth.currentUser()?.role === 'APP_ADMIN';
+  }
+
+  get currentProjectRole(): ProjectRole | null {
+    const userId = this.auth.currentUser()?.id;
+    if (userId === undefined) return null;
+    const role = this.projectMembers.find((member) => member.userId === userId)?.role;
+    return role && this.projectRoles.includes(role) ? role : null;
+  }
+
+  get canManageProjectMembers(): boolean {
+    return this.isAppAdmin || this.currentProjectRole === 'PROJECT_LEAD';
+  }
+
+  get availableMemberRoles(): ProjectRole[] {
+    return this.isAppAdmin
+      ? this.projectRoles
+      : this.projectRoles.filter((role) => role !== 'PROJECT_LEAD');
+  }
+
   get filteredBugs(): Bug[] {
+    if (this.mode === 'real') return this.bugs;
     const text = this.filterText.trim().toLowerCase();
     return this.displayedBugs.filter((bug) => {
       const matchesText =
@@ -149,13 +303,24 @@ export class WorkspaceComponent implements OnInit {
       return (
         matchesText &&
         (!this.filterStatus || bug.status === this.filterStatus) &&
-        (!this.filterPriority || bug.priority === this.filterPriority)
+        (!this.filterPriority || bug.priority === this.filterPriority) &&
+        (!this.filterSeverity || bug.severity === this.filterSeverity)
       );
     });
   }
 
   get totalCount(): number {
     return this.filteredBugs.length;
+  }
+
+  get hasActiveIssueFilters(): boolean {
+    return Boolean(
+      this.filterText.trim() || this.filterStatus || this.filterPriority || this.filterSeverity,
+    );
+  }
+
+  formatSortField(field: BugSortField): string {
+    return field.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`);
   }
 
   countByStatus(status: BugStatus): number {
@@ -172,10 +337,20 @@ export class WorkspaceComponent implements OnInit {
 
   switchToDemo(): void {
     this.resetIssueDetailState();
+    this.projectSelectionId++;
+    this.bugsRequestId++;
+    this.bugsLoadSubscription?.unsubscribe();
     this.mode = 'demo';
     this.selectedProject = null;
     this.selectedBug = this.demoBugs[0];
     this.bugsError = '';
+    this.bugs = [];
+    this.loadingBugs = false;
+    this.hasNextPage = false;
+    this.noMoreIssues = false;
+    this.failedBugPage = null;
+    this.creating = false;
+    this.resetProjectMemberState();
     this.resetFilters();
   }
 
@@ -185,7 +360,9 @@ export class WorkspaceComponent implements OnInit {
     this.selectedBug = null;
     this.resetFilters();
     if (this.selectedProject) {
-      this.loadBugs(this.selectedProject.id);
+      this.pageIndex = 0;
+      this.loadBugs(this.selectedProject.id, this.projectSelectionId, 0);
+      this.loadProjectMembers(this.selectedProject.id, this.projectSelectionId);
     } else if (this.projects.length) {
       this.selectProject(this.projects[0]);
     }
@@ -196,10 +373,61 @@ export class WorkspaceComponent implements OnInit {
     this.mode = 'real';
     this.selectedProject = project;
     this.selectedBug = null;
+    this.creating = false;
+    this.bugs = [];
+    this.resetFilters();
+    this.pageIndex = 0;
+    this.hasNextPage = false;
+    this.noMoreIssues = false;
+    this.failedBugPage = null;
+    this.bugsLoadSubscription?.unsubscribe();
+    this.resetProjectMemberState();
+    const selectionId = ++this.projectSelectionId;
+    this.loadBugs(project.id, selectionId, 0);
+    this.loadProjectMembers(project.id, selectionId);
+  }
+
+  applyIssueFilters(): void {
+    if (this.mode !== 'real' || !this.selectedProject) return;
+    this.clearSelectedIssue();
+    this.pageIndex = 0;
+    this.hasNextPage = false;
+    this.noMoreIssues = false;
+    this.failedBugPage = null;
+    this.loadBugs(this.selectedProject.id, this.projectSelectionId, 0);
+  }
+
+  clearIssueFilters(): void {
     this.filterText = '';
     this.filterStatus = '';
     this.filterPriority = '';
-    this.loadBugs(project.id);
+    this.noMoreIssues = false;
+    this.failedBugPage = null;
+    this.filterSeverity = '';
+    this.sortField = 'createdAt';
+    this.sortDirection = 'desc';
+    this.pageSize = 25;
+    if (this.mode === 'real') this.applyIssueFilters();
+  }
+
+  previousBugPage(): void {
+    if (this.loadingBugs || this.pageIndex < 1 || !this.selectedProject) return;
+    this.clearSelectedIssue();
+    this.noMoreIssues = false;
+    this.loadBugs(this.selectedProject.id, this.projectSelectionId, this.pageIndex - 1);
+  }
+
+  nextBugPage(): void {
+    if (this.loadingBugs || !this.hasNextPage || !this.selectedProject) return;
+    this.clearSelectedIssue();
+    this.noMoreIssues = false;
+    this.loadBugs(this.selectedProject.id, this.projectSelectionId, this.pageIndex + 1);
+  }
+
+  retryBugs(): void {
+    if (!this.selectedProject) return;
+    const page = this.failedBugPage ?? this.pageIndex;
+    this.loadBugs(this.selectedProject.id, this.projectSelectionId, page);
   }
 
   selectBug(bug: Bug): void {
@@ -321,105 +549,334 @@ export class WorkspaceComponent implements OnInit {
   }
 
   saveEdit(): void {
-    if (!this.selectedProject || !this.selectedDetail || this.editSubmitting) return;
-    if (this.editTitle.trim().length < 5 || !this.editDescription.trim()) {
-      this.editError = 'Title and description are required.';
+    const project = this.selectedProject;
+    const detail = this.selectedDetail;
+    if (
+      !project ||
+      !detail ||
+      !detail.allowedActions.includes('EDIT_FIELDS') ||
+      this.editSubmitting
+    ) {
+      return;
+    }
+    const title = this.editTitle.trim();
+    const description = this.editDescription.trim();
+    if (title.length < 5 || title.length > 120 || !description || description.length > 5000) {
+      this.editError = 'Title must be 5–120 characters and description 1–5000 characters.';
       return;
     }
 
+    const selectionId = this.issueSelectionId;
     this.editSubmitting = true;
     this.editError = '';
+    this.editConflict = '';
+    this.latestVersionNotice = '';
     this.workspace
-      .updateBug(this.selectedProject.id, this.selectedDetail.bug.id, {
-        title: this.editTitle,
-        description: this.editDescription,
+      .updateBug(project.id, detail.bug.id, {
+        title,
+        description,
         priority: this.editPriority,
         severity: this.editSeverity,
-        version: this.selectedDetail.bug.version,
+        version: detail.bug.version,
       })
       .subscribe({
         next: (bug) => {
+          if (selectionId !== this.issueSelectionId) return;
           this.replaceBug(bug);
           this.selectedBug = bug;
           this.selectedDetail = { ...this.selectedDetail!, bug };
+          this.editTitle = bug.title;
+          this.editDescription = bug.description;
+          this.editPriority = bug.priority;
+          this.editSeverity = bug.severity;
           this.editSubmitting = false;
+          this.refreshCurrentBugPage();
         },
         error: (error) => {
+          if (selectionId !== this.issueSelectionId) return;
           this.editSubmitting = false;
-          this.handleRequestError(error, 'Issue could not be updated.');
+          this.editError = this.formatRequestError(error, 'edit', 'Issue could not be updated.');
+          this.editConflict = error.status === 409 ? this.editError : '';
+          this.latestVersionNotice = '';
+          this.redirectOnUnauthorized(error);
         },
       });
+  }
+
+  reloadIssueForReview(): void {
+    const project = this.selectedProject;
+    const bug = this.selectedBug;
+    const selectionId = this.issueSelectionId;
+    if (!project || !bug || this.detailLoading) return;
+    this.detailLoading = true;
+    this.detailError = '';
+    this.workspace.getBug(project.id, bug.id).subscribe({
+      next: (detail) => {
+        if (selectionId !== this.issueSelectionId) return;
+        this.selectedDetail = detail;
+        this.selectedBug = detail.bug;
+        this.replaceBug(detail.bug);
+        this.detailLoading = false;
+        this.latestVersionNotice =
+          'Latest server version loaded. Your draft is unchanged; review it before saving again.';
+        this.editConflict = '';
+        this.editError = '';
+        this.actionError = '';
+        this.actionConflict = false;
+        this.assignError = '';
+        this.assignConflict = false;
+        this.refreshCurrentBugPage();
+      },
+      error: (error) => {
+        if (selectionId !== this.issueSelectionId) return;
+        this.detailLoading = false;
+        this.detailError = this.formatRequestError(
+          error,
+          'detail',
+          'Latest issue version could not be loaded.',
+        );
+        this.redirectOnUnauthorized(error);
+      },
+    });
   }
 
   assignIssue(): void {
-    if (!this.selectedProject || !this.selectedDetail || this.assignSubmitting) return;
-    const userId = Number(this.assigneeUserId);
-    if (!Number.isInteger(userId) || userId < 1) return;
+    const project = this.selectedProject;
+    const detail = this.selectedDetail;
+    const bug = this.selectedBug;
+    const userId = this.assigneeUserId;
+    if (
+      !project ||
+      !detail ||
+      !bug ||
+      !detail.allowedActions.includes('ASSIGN') ||
+      !this.membersLoaded ||
+      this.assignSubmitting
+    ) {
+      return;
+    }
+    if (userId === null || !this.projectMembers.some((member) => member.userId === userId)) {
+      this.assignError = 'Choose a member of this project.';
+      return;
+    }
+    const selectionId = this.issueSelectionId;
+    const projectSelectionId = this.projectSelectionId;
     this.assignSubmitting = true;
-    this.workspace
-      .assignBug(
-        this.selectedProject.id,
-        this.selectedDetail.bug.id,
-        userId,
-        this.selectedDetail.bug.version,
-      )
-      .subscribe({
-        next: (bug) => {
-          this.replaceBug(bug);
-          this.selectedBug = bug;
-          this.selectedDetail = { ...this.selectedDetail!, bug };
-          this.assigneeUserId = '';
-          this.assignSubmitting = false;
-        },
-        error: (error) => {
-          this.assignSubmitting = false;
-          this.handleRequestError(error, 'Issue could not be assigned.');
-        },
-      });
+    this.assignError = '';
+    this.assignConflict = false;
+    this.latestVersionNotice = '';
+    this.workspace.assignBug(project.id, detail.bug.id, userId, detail.bug.version).subscribe({
+      next: (bug) => {
+        if (
+          selectionId !== this.issueSelectionId ||
+          projectSelectionId !== this.projectSelectionId
+        ) {
+          return;
+        }
+        this.replaceBug(bug);
+        this.selectedBug = bug;
+        this.selectedDetail = { ...this.selectedDetail!, bug };
+        this.assigneeUserId = null;
+        this.assignSubmitting = false;
+        this.assignConflict = false;
+        this.latestVersionNotice = '';
+        this.refreshSelectedDetail(project.id, bug.id, selectionId);
+        this.refreshCurrentBugPage();
+      },
+      error: (error) => {
+        if (
+          selectionId !== this.issueSelectionId ||
+          projectSelectionId !== this.projectSelectionId
+        ) {
+          return;
+        }
+        this.assignSubmitting = false;
+        this.assignError = this.formatRequestError(
+          error,
+          'versioned',
+          'Issue could not be assigned.',
+        );
+        this.assignConflict = error.status === 409;
+        this.redirectOnUnauthorized(error);
+      },
+    });
+  }
+
+  createProject(): void {
+    if (!this.isAppAdmin || this.creatingProject) return;
+    this.createProjectForm.markAllAsTouched();
+    const value = this.createProjectForm.getRawValue();
+    if (
+      this.createProjectForm.invalid ||
+      !value.key.trim() ||
+      !value.name.trim() ||
+      value.leadUserId === null
+    ) {
+      return;
+    }
+
+    const request: CreateProjectRequest = {
+      key: value.key.trim(),
+      name: value.name.trim(),
+      description: value.description.trim() || null,
+      leadUserId: value.leadUserId,
+    };
+    this.creatingProject = true;
+    this.createProjectError = '';
+    this.workspace.createProject(request).subscribe({
+      next: () => {
+        this.creatingProject = false;
+        this.createProjectForm.reset({ key: '', name: '', description: '', leadUserId: null });
+        this.showCreateProjectForm = false;
+        this.refreshProjects();
+      },
+      error: (error: { status?: number }) => {
+        this.creatingProject = false;
+        if (this.redirectOnUnauthorized(error)) return;
+        this.createProjectError =
+          error.status === 409
+            ? 'That project key is already in use.'
+            : error.status === 404
+              ? 'The lead user ID was not found.'
+              : error.status === 403
+                ? 'Only application admins can create projects.'
+                : 'Project could not be created. Check the form and try again.';
+      },
+    });
+  }
+
+  addProjectMember(): void {
+    const project = this.selectedProject;
+    if (!project || !this.canManageProjectMembers || this.addingMember) return;
+    this.addMemberForm.markAllAsTouched();
+    const value = this.addMemberForm.getRawValue();
+    if (
+      this.addMemberForm.invalid ||
+      value.userId === null ||
+      !this.availableMemberRoles.includes(value.role)
+    ) {
+      return;
+    }
+
+    const selectionId = this.projectSelectionId;
+    const request: AddProjectMemberRequest = { userId: value.userId, role: value.role };
+    this.addingMember = true;
+    this.addMemberError = '';
+    this.addMemberSuccess = '';
+    this.workspace.addProjectMember(project.id, request).subscribe({
+      next: () => {
+        if (selectionId !== this.projectSelectionId || this.selectedProject?.id !== project.id) {
+          return;
+        }
+        this.addingMember = false;
+        this.addMemberForm.reset({ userId: null, role: 'DEVELOPER' });
+        this.addMemberSuccess = 'Project member added.';
+        this.loadProjectMembers(project.id, selectionId, true);
+      },
+      error: (error: { status?: number }) => {
+        if (selectionId !== this.projectSelectionId || this.selectedProject?.id !== project.id) {
+          return;
+        }
+        this.addingMember = false;
+        this.addMemberError =
+          error.status === 404
+            ? 'The user or project was not found.'
+            : error.status === 403
+              ? 'You are not allowed to add this member or role.'
+              : 'Project member could not be added.';
+        this.redirectOnUnauthorized(error);
+      },
+    });
+  }
+
+  retryProjectMembers(): void {
+    if (!this.selectedProject || this.membersLoading) return;
+    this.loadProjectMembers(this.selectedProject.id, this.projectSelectionId, true);
   }
 
   transition(status: BugStatus): void {
-    if (!this.selectedProject || !this.selectedDetail || this.actionSubmitting) return;
+    const project = this.selectedProject;
+    const detail = this.selectedDetail;
+    const actionByStatus: Partial<Record<BugStatus, string>> = {
+      IN_PROGRESS: 'START',
+      RESOLVED: 'RESOLVE',
+      CLOSED: 'CLOSE',
+      REOPENED: 'REOPEN',
+    };
+    const requiredAction = actionByStatus[status];
+    if (
+      !project ||
+      !detail ||
+      !requiredAction ||
+      !detail.allowedActions.includes(requiredAction) ||
+      this.actionSubmitting
+    ) {
+      return;
+    }
     const selectionId = this.issueSelectionId;
-    const projectId = this.selectedProject.id;
-    const reason =
-      status === 'CLOSED' || status === 'REOPENED' ? window.prompt('Enter a reason') || '' : '';
-    if ((status === 'CLOSED' || status === 'REOPENED') && !reason.trim()) return;
+    const projectId = project.id;
+    const bugId = detail.bug.id;
+    const reasonRequired = status === 'CLOSED' || status === 'REOPENED';
+    const reason = reasonRequired ? window.prompt('Enter a reason (required)') || '' : '';
+    if (reasonRequired && !reason.trim()) return;
+    if (reason.length > 5000) {
+      this.actionError = 'Reason must be 5000 characters or fewer.';
+      return;
+    }
     this.actionSubmitting = true;
-    this.workspace
-      .transitionBug(
-        this.selectedProject.id,
-        this.selectedDetail.bug.id,
-        status,
-        this.selectedDetail.bug.version,
-        reason,
-      )
-      .subscribe({
-        next: (bug) => {
-          if (selectionId !== this.issueSelectionId) return;
-          this.replaceBug(bug);
-          this.selectedBug = bug;
-          this.selectedDetail = { bug, allowedActions: this.selectedDetail!.allowedActions };
-          this.actionSubmitting = false;
-          this.loadHistory(selectionId, projectId, bug.id, true);
-        },
-        error: (error) => {
-          if (selectionId !== this.issueSelectionId) return;
-          this.actionSubmitting = false;
-          this.handleRequestError(error, 'Issue status could not be changed.');
-        },
-      });
+    this.actionError = '';
+    this.actionConflict = false;
+    this.latestVersionNotice = '';
+    this.workspace.transitionBug(projectId, bugId, status, detail.bug.version, reason).subscribe({
+      next: (bug) => {
+        if (selectionId !== this.issueSelectionId) return;
+        this.replaceBug(bug);
+        this.selectedBug = bug;
+        this.selectedDetail = { bug, allowedActions: this.selectedDetail!.allowedActions };
+        this.actionSubmitting = false;
+        this.actionConflict = false;
+        this.refreshSelectedDetail(projectId, bug.id, selectionId);
+        this.refreshCurrentBugPage();
+        this.loadHistory(selectionId, projectId, bug.id, true);
+      },
+      error: (error) => {
+        if (selectionId !== this.issueSelectionId) return;
+        this.actionSubmitting = false;
+        this.actionError = this.formatRequestError(
+          error,
+          'versioned',
+          'Issue status could not be changed.',
+        );
+        this.actionConflict = error.status === 409;
+        this.redirectOnUnauthorized(error);
+      },
+    });
   }
 
   submitBug(): void {
     if (this.mode === 'demo') return;
     this.createForm.markAllAsTouched();
     if (this.createForm.invalid || !this.selectedProject || this.creating) return;
+    const formValue = this.createForm.getRawValue();
+    const title = formValue.title.trim();
+    const description = formValue.description.trim();
+    if (title.length < 5 || title.length > 120 || !description || description.length > 5000) {
+      this.createError = 'Title must be 5–120 characters and description 1–5000 characters.';
+      return;
+    }
     this.creating = true;
     this.createError = '';
-    const request: CreateBugRequest = this.createForm.getRawValue();
-    this.workspace.createBug(this.selectedProject.id, request).subscribe({
+    const selectionId = this.projectSelectionId;
+    const project = this.selectedProject;
+    const request: CreateBugRequest = {
+      ...formValue,
+      title,
+      description,
+    };
+    this.workspace.createBug(project.id, request).subscribe({
       next: (bug) => {
+        if (selectionId !== this.projectSelectionId || this.selectedProject?.id !== project.id)
+          return;
         this.bugs = [bug, ...this.bugs.filter((existing) => existing.key !== bug.key)];
         this.selectedBug = bug;
         this.referenceBug = bug;
@@ -432,10 +889,17 @@ export class WorkspaceComponent implements OnInit {
         });
         this.showCreateForm = false;
         this.creating = false;
+        this.refreshCurrentBugPage();
       },
       error: (error) => {
+        if (selectionId !== this.projectSelectionId) return;
         this.creating = false;
-        this.handleRequestError(error, 'We could not create this issue.');
+        this.createError = this.formatRequestError(
+          error,
+          'create',
+          'We could not create this issue.',
+        );
+        this.redirectOnUnauthorized(error);
       },
     });
   }
@@ -445,6 +909,137 @@ export class WorkspaceComponent implements OnInit {
   }
 
   retryProjects(): void {
+    this.loadProjects();
+  }
+
+  retryAdminUsers(): void {
+    this.loadAdminUsers(true);
+  }
+
+  createAdminUser(): void {
+    if (!this.isAppAdmin || this.creatingAdminUser) return;
+    this.createAdminUserForm.markAllAsTouched();
+    const value = this.createAdminUserForm.getRawValue();
+    const email = value.email.trim();
+    const displayName = value.displayName.trim();
+    if (
+      this.createAdminUserForm.invalid ||
+      !email ||
+      !displayName ||
+      value.password.length < 12 ||
+      value.password.length > 72
+    ) {
+      return;
+    }
+
+    const request: CreateAdminUserRequest = {
+      email,
+      displayName,
+      password: value.password,
+      role: value.role,
+    };
+    this.creatingAdminUser = true;
+    this.createAdminUserError = '';
+    this.createAdminUserSuccess = '';
+    this.workspace.createAdminUser(request).subscribe({
+      next: (user) => {
+        this.creatingAdminUser = false;
+        this.createAdminUserSuccess = `User ${user.email} was created.`;
+        this.createAdminUserForm.reset({ email: '', displayName: '', password: '', role: 'USER' });
+        this.adminUsers = [user, ...this.adminUsers.filter((existing) => existing.id !== user.id)];
+        this.adminUserEdits[user.id] = { role: this.globalRoleForUser(user.role) };
+      },
+      error: (error: { status?: number }) => {
+        this.creatingAdminUser = false;
+        this.createAdminUserError = this.adminMutationError(error, 'create user');
+        this.redirectOnUnauthorized(error);
+      },
+    });
+  }
+
+  updateAdminUser(user: AdminUser): void {
+    if (!this.isAppAdmin || this.adminUserUpdates[user.id]?.loading) return;
+    const role = this.adminUserEdits[user.id]?.role;
+    if (!role || !this.globalRoles.includes(role)) return;
+    this.adminUserUpdates[user.id] = { loading: true, error: '' };
+    this.workspace.updateAdminUser(user.id, { role, enabled: null }).subscribe({
+      next: (updated) => {
+        this.adminUsers = this.adminUsers.map((existing) =>
+          existing.id === updated.id ? updated : existing,
+        );
+        this.adminUserEdits[updated.id] = { role: this.globalRoleForUser(updated.role) };
+        this.adminUserUpdates[updated.id] = { loading: false, error: '' };
+      },
+      error: (error: { status?: number }) => {
+        this.adminUserUpdates[user.id] = {
+          loading: false,
+          error: this.adminMutationError(error, 'update user role'),
+        };
+        this.redirectOnUnauthorized(error);
+      },
+    });
+  }
+
+  bindGitHubRepository(): void {
+    if (!this.isAppAdmin || this.bindingGitHubRepository) return;
+    this.bindGitHubForm.markAllAsTouched();
+    const value = this.bindGitHubForm.getRawValue();
+    const owner = value.owner.trim();
+    const repositoryName = value.repositoryName.trim();
+    if (
+      this.bindGitHubForm.invalid ||
+      value.projectId === null ||
+      value.installationId === null ||
+      value.repositoryId === null ||
+      !owner ||
+      !repositoryName ||
+      owner.length > 100 ||
+      repositoryName.length > 100 ||
+      owner.length + repositoryName.length + 1 > 201
+    ) {
+      return;
+    }
+
+    const request: BindGitHubRepositoryRequest = {
+      projectId: value.projectId,
+      installationId: value.installationId,
+      repositoryId: value.repositoryId,
+      owner,
+      repositoryName,
+      fullName: `${owner}/${repositoryName}`,
+    };
+    this.bindingGitHubRepository = true;
+    this.bindGitHubError = '';
+    this.githubBindingResult = null;
+    this.workspace.bindGitHubRepository(request).subscribe({
+      next: (binding) => {
+        this.bindingGitHubRepository = false;
+        this.githubBindingResult = binding;
+        this.bindGitHubForm.reset({
+          projectId: null,
+          installationId: null,
+          repositoryId: null,
+          owner: '',
+          repositoryName: '',
+        });
+      },
+      error: (error: { status?: number }) => {
+        this.bindingGitHubRepository = false;
+        this.bindGitHubError = this.adminMutationError(error, 'bind repository');
+        this.redirectOnUnauthorized(error);
+      },
+    });
+  }
+
+  retryGitHubBinding(): void {
+    if (!this.bindingGitHubRepository) this.bindGitHubRepository();
+  }
+
+  private refreshProjects(): void {
+    if (this.loadingProjects) {
+      this.refreshProjectsAfterLoad = true;
+      return;
+    }
     this.loadProjects();
   }
 
@@ -481,6 +1076,7 @@ export class WorkspaceComponent implements OnInit {
     this.filterText = '';
     this.filterStatus = '';
     this.filterPriority = '';
+    this.filterSeverity = '';
   }
 
   private loadProjects(): void {
@@ -491,37 +1087,261 @@ export class WorkspaceComponent implements OnInit {
       next: (projects) => {
         this.projects = projects;
         this.loadingProjects = false;
+        this.loadQueuedProjectRefresh();
       },
       error: (error) => {
         this.loadingProjects = false;
         this.handleRequestError(error, 'Projects could not be loaded.');
+        this.loadQueuedProjectRefresh();
       },
     });
   }
 
-  private loadBugs(projectId: number): void {
-    this.loadingBugs = true;
-    this.bugsError = '';
-    this.workspace.getBugs(projectId).subscribe({
-      next: (bugs) => {
-        this.bugs = bugs;
-        this.loadingBugs = false;
+  private loadAdminUsers(force = false): void {
+    if (!this.isAppAdmin || (this.adminUsersLoading && !force)) return;
+    if (force) this.adminUsersLoadSubscription?.unsubscribe();
+    this.adminUsersLoading = true;
+    this.adminUsersError = '';
+    this.adminUsersLoadSubscription = this.workspace.getAdminUsers().subscribe({
+      next: (users) => {
+        if (!this.isAppAdmin) return;
+        this.adminUsers = users;
+        this.adminUserEdits = Object.fromEntries(
+          users.map((user) => [user.id, { role: this.globalRoleForUser(user.role) }]),
+        );
+        this.adminUsersLoading = false;
+        this.adminUsersLoaded = true;
       },
-      error: (error) => {
-        this.loadingBugs = false;
-        this.handleRequestError(error, 'Issues could not be loaded.');
+      error: (error: { status?: number }) => {
+        this.adminUsersLoading = false;
+        this.adminUsersLoaded = false;
+        this.adminUsersError = this.adminMutationError(error, 'load users');
+        this.redirectOnUnauthorized(error);
       },
     });
+  }
+
+  private globalRoleForUser(role: string): GlobalRole | '' {
+    return this.globalRoles.find((supportedRole) => supportedRole === role) ?? '';
+  }
+
+  private adminMutationError(error: { status?: number }, operation: string): string {
+    switch (error.status) {
+      case 0:
+        return `Network request failed while attempting to ${operation}.`;
+      case 401:
+        return 'Your session expired. Sign in again to continue.';
+      case 403:
+        return 'Access denied. Application admin permission is required.';
+      case 404:
+        return operation === 'update user role'
+          ? 'The user no longer exists.'
+          : operation === 'bind repository'
+            ? 'The project ID was not found.'
+            : 'The admin users resource was not found.';
+      case 409:
+        return operation === 'create user'
+          ? 'That email address is already registered.'
+          : operation === 'bind repository'
+            ? 'The repository or project is already bound.'
+            : 'The request conflicts with existing data.';
+      case 400:
+      case 422:
+        return `The request to ${operation} was rejected. Check the entered values.`;
+      default:
+        return `Could not ${operation}. Retry the request.`;
+    }
+  }
+
+  private loadQueuedProjectRefresh(): void {
+    if (!this.refreshProjectsAfterLoad) return;
+    this.refreshProjectsAfterLoad = false;
+    this.loadProjects();
+  }
+
+  private loadBugs(projectId: number, selectionId: number, page: number): void {
+    if (selectionId !== this.projectSelectionId) return;
+    this.bugsLoadSubscription?.unsubscribe();
+    const requestId = ++this.bugsRequestId;
+    const query: BugListQuery = {
+      text: this.filterText,
+      status: this.filterStatus,
+      priority: this.filterPriority,
+      severity: this.filterSeverity,
+      page,
+      size: this.pageSize,
+      sort: this.sortField,
+      direction: this.sortDirection,
+    };
+    this.loadingBugs = true;
+    this.bugsError = '';
+    this.bugsLoadSubscription = this.workspace.getBugs(projectId, query).subscribe({
+      next: (bugs) => {
+        if (
+          requestId !== this.bugsRequestId ||
+          selectionId !== this.projectSelectionId ||
+          this.selectedProject?.id !== projectId
+        ) {
+          return;
+        }
+        this.loadingBugs = false;
+        this.failedBugPage = null;
+        if (bugs.length === 0 && page > 0 && page > this.pageIndex) {
+          this.hasNextPage = false;
+          this.noMoreIssues = true;
+          return;
+        }
+        this.bugs = bugs;
+        this.pageIndex = page;
+        this.hasNextPage = bugs.length === this.pageSize;
+        this.noMoreIssues = false;
+      },
+      error: (error) => {
+        if (
+          requestId !== this.bugsRequestId ||
+          selectionId !== this.projectSelectionId ||
+          this.selectedProject?.id !== projectId
+        ) {
+          return;
+        }
+        this.loadingBugs = false;
+        this.failedBugPage = page;
+        this.bugsError = this.formatRequestError(error, 'list', 'Issues could not be loaded.');
+        this.redirectOnUnauthorized(error);
+      },
+    });
+  }
+
+  private loadProjectMembers(projectId: number, selectionId: number, force = false): void {
+    if (selectionId !== this.projectSelectionId) return;
+    if (this.membersLoading && !force) return;
+    if (force) this.membersLoadSubscription?.unsubscribe();
+
+    this.projectMembers = [];
+    this.membersLoading = true;
+    this.membersLoaded = false;
+    this.membersError = '';
+    this.membersLoadSubscription = this.workspace.getProjectMembers(projectId).subscribe({
+      next: (members) => {
+        if (selectionId !== this.projectSelectionId || this.selectedProject?.id !== projectId) {
+          return;
+        }
+        this.projectMembers = members;
+        this.membersLoading = false;
+        this.membersLoaded = true;
+      },
+      error: (error: { status?: number }) => {
+        if (selectionId !== this.projectSelectionId || this.selectedProject?.id !== projectId) {
+          return;
+        }
+        this.membersLoading = false;
+        this.membersLoaded = false;
+        this.membersError =
+          error.status === 404
+            ? 'Members are unavailable or this project is not accessible.'
+            : 'Project members could not be loaded.';
+        this.redirectOnUnauthorized(error);
+      },
+    });
+  }
+
+  private resetProjectMemberState(): void {
+    this.membersLoadSubscription?.unsubscribe();
+    this.membersLoadSubscription = undefined;
+    this.projectMembers = [];
+    this.membersLoading = false;
+    this.membersLoaded = false;
+    this.membersError = '';
+    this.addingMember = false;
+    this.addMemberError = '';
+    this.addMemberSuccess = '';
+    this.addMemberForm.reset({ userId: null, role: 'DEVELOPER' });
   }
 
   private handleRequestError(error: { status?: number }, fallback: string): void {
     if (this.redirectOnUnauthorized(error)) return;
-    if (fallback === 'Issues could not be loaded.') this.bugsError = fallback;
-    else if (fallback === 'Issue details could not be loaded.') this.detailError = fallback;
-    else if (fallback === 'Issue could not be updated.') this.editError = fallback;
-    else if (fallback !== 'Projects could not be loaded.') this.detailError = fallback;
-    else if (fallback === 'Projects could not be loaded.') this.projectsError = fallback;
-    else this.createError = fallback;
+    const message = this.formatRequestError(error, 'general', fallback);
+    if (fallback === 'Issues could not be loaded.') this.bugsError = message;
+    else if (fallback === 'Issue details could not be loaded.') this.detailError = message;
+    else if (fallback === 'Issue could not be updated.') this.editError = message;
+    else if (fallback === 'Projects could not be loaded.') this.projectsError = message;
+    else this.createError = message;
+  }
+
+  private formatRequestError(
+    error: { status?: number },
+    context: 'list' | 'detail' | 'create' | 'edit' | 'versioned' | 'general',
+    fallback: string,
+  ): string {
+    switch (error.status) {
+      case 0:
+        return 'Network request failed. Check your connection and retry.';
+      case 401:
+        return 'Your session expired. Sign in again to continue.';
+      case 403:
+        return 'Access denied. Your account is not allowed to perform this action.';
+      case 404:
+        return context === 'list' || context === 'detail'
+          ? 'The project or issue is unavailable or not accessible.'
+          : 'The requested project or record is unavailable.';
+      case 409:
+        return context === 'edit' || context === 'versioned'
+          ? 'This issue changed since it was loaded. Reload the latest version before retrying.'
+          : 'This request conflicts with existing data. Review the values and try again.';
+      case 422:
+        return 'The request could not be processed. Check the values and allowed action, then retry.';
+      case 400:
+        return 'The request was invalid. Check required fields and any required reason.';
+      default:
+        return fallback;
+    }
+  }
+
+  private refreshCurrentBugPage(): void {
+    if (!this.selectedProject || this.mode !== 'real') return;
+    this.loadBugs(this.selectedProject.id, this.projectSelectionId, this.pageIndex);
+  }
+
+  private clearSelectedIssue(): void {
+    this.resetIssueDetailState();
+    this.selectedBug = null;
+    this.selectedDetail = null;
+  }
+
+  private refreshSelectedDetail(projectId: number, bugId: number, selectionId: number): void {
+    this.detailLoading = true;
+    this.detailError = '';
+    this.workspace.getBug(projectId, bugId).subscribe({
+      next: (detail) => {
+        if (
+          selectionId !== this.issueSelectionId ||
+          this.selectedProject?.id !== projectId ||
+          this.selectedBug?.id !== bugId
+        ) {
+          return;
+        }
+        this.selectedDetail = detail;
+        this.selectedBug = detail.bug;
+        this.replaceBug(detail.bug);
+        this.detailLoading = false;
+      },
+      error: (error) => {
+        if (
+          selectionId !== this.issueSelectionId ||
+          this.selectedProject?.id !== projectId ||
+          this.selectedBug?.id !== bugId
+        ) {
+          return;
+        }
+        this.detailLoading = false;
+        this.detailError = this.formatRequestError(
+          error,
+          'detail',
+          'Issue details could not be refreshed.',
+        );
+        this.redirectOnUnauthorized(error);
+      },
+    });
   }
 
   private replaceBug(bug: Bug): void {
@@ -546,6 +1366,16 @@ export class WorkspaceComponent implements OnInit {
     this.detailLoading = false;
     this.detailError = '';
     this.actionSubmitting = false;
+    this.actionError = '';
+    this.actionConflict = false;
+    this.assignSubmitting = false;
+    this.assignError = '';
+    this.assignConflict = false;
+    this.assigneeUserId = null;
+    this.editSubmitting = false;
+    this.editError = '';
+    this.editConflict = '';
+    this.latestVersionNotice = '';
   }
 
   private loadComments(selectionId: number, projectId: number, bugId: number, force = false): void {
