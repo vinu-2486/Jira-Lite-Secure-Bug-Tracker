@@ -19,6 +19,9 @@ public class User {
     @Column(name = "password_hash", nullable = false, length = 100)
     private String passwordHash;
 
+    @Column(name = "google_sub", unique = true, length = 255)
+    private String googleSub;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private GlobalRole role;
@@ -45,6 +48,7 @@ public class User {
     public String getEmail() { return email; }
     public String getDisplayName() { return displayName; }
     public String getPasswordHash() { return passwordHash; }
+    public String getGoogleSub() { return googleSub; }
     public GlobalRole getRole() { return role; }
     public boolean isEnabled() { return enabled; }
     public int getFailedAttempts() { return failedAttempts; }
@@ -54,4 +58,5 @@ public class User {
     public void setLockedUntil(Instant v) { this.lockedUntil = v; }
     public void setRole(GlobalRole role) { this.role = role; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    public void setGoogleSub(String googleSub) { this.googleSub = googleSub; }
 }

@@ -142,7 +142,7 @@ jobs:
   dependency-scan:
     name: Dependency vulnerability scan
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
     env:
       # Required by current NVD API clients. A missing secret fails this scan
       # explicitly instead of treating an unavailable data source as clean.
@@ -189,6 +189,14 @@ jobs:
             echo "npm audit did not produce a report; this is a scanner or network failure." >&2
           fi
           exit 1
+
+      - name: Cache NVD data
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.m2/repository/org/owasp/dependency-check-data
+          key: nvd-data-${{ runner.os }}-dc13.0.0-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            nvd-data-${{ runner.os }}-dc13.0.0-
 
       - name: Scan Maven dependencies (CVSS 7 threshold)
         id: maven-audit
