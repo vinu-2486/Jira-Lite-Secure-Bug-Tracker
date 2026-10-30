@@ -5,7 +5,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import java.net.URI;
 import java.util.Map;
 
-final class IsolatedDatabaseTestSupport {
+public final class IsolatedDatabaseTestSupport {
     private static final String URL = "JIRALITE_TEST_DB_URL";
     private static final String USERNAME = "JIRALITE_TEST_DB_USERNAME";
     private static final String PASSWORD = "JIRALITE_TEST_DB_PASSWORD";
@@ -16,7 +16,7 @@ final class IsolatedDatabaseTestSupport {
     private IsolatedDatabaseTestSupport() {
     }
 
-    static void registerProperties(DynamicPropertyRegistry registry) {
+    public static void registerProperties(DynamicPropertyRegistry registry) {
         validateConfiguration();
         registry.add("spring.datasource.url", () -> required(URL));
         registry.add("spring.datasource.username", () -> required(USERNAME));
@@ -25,7 +25,7 @@ final class IsolatedDatabaseTestSupport {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
     }
 
-    static void validateConfiguration() {
+    public static void validateConfiguration() {
         String url = required(URL);
         String schema = required(SCHEMA);
         String port = required(PORT);
@@ -54,7 +54,7 @@ final class IsolatedDatabaseTestSupport {
         required(PASSWORD);
     }
 
-    static String expectedSchema() {
+    public static String expectedSchema() {
         return required(SCHEMA);
     }
 
