@@ -41,6 +41,13 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.spa())
             .addFilterAfter(new CsrfCookieFilter(),
                 org.springframework.security.web.authentication.www.BasicAuthenticationFilter.class)
+            .headers(headers -> headers
+                .contentTypeOptions(contentTypeOptions -> {})
+                .frameOptions(frameOptions -> frameOptions.deny())
+                .referrerPolicy(referrerPolicy -> referrerPolicy
+                    .policy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy
+                        .STRICT_ORIGIN_WHEN_CROSS_ORIGIN)
+                ))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/signup").permitAll()

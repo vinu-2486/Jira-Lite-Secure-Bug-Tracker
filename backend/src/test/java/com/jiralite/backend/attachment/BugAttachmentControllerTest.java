@@ -43,6 +43,8 @@ class BugAttachmentControllerTest {
 
             assertThat(downloaded).isNotNull();
             assertThat(downloaded.getContentAsString(StandardCharsets.UTF_8)).isEqualTo("private");
+            assertThat(fixture.controller.download("JILA-1", 1L, fixture.actor)
+                    .getHeaders().getFirst("X-Content-Type-Options")).isEqualTo("nosniff");
         } finally {
             deleteContents(root);
         }
@@ -82,6 +84,22 @@ class BugAttachmentControllerTest {
             assertThatThrownBy(() -> fixture.controller.upload("JILA-1", file, fixture.actor))
                     .isInstanceOf(ResponseStatusException.class)
                     .extracting("statusCode.value").isEqualTo(413);
+        } finally {
+            deleteContents(root);
+        }
+    }
+
+    @Test
+    void uploadRejectsPathTraversalNames() throws Exception {
+        Path root = Files.createTempDirectory("jiralite-attachment-test-");
+        try {
+            Fixture fixture = fixture(root, true);
+            MockMultipartFile file = new MockMultipartFile("file", "../secret.txt", "text/plain",
+                    "private".getBytes());
+
+            assertThatThrownBy(() -> fixture.controller.upload("JILA-1", file, fixture.actor))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .extracting("statusCode.value").isEqualTo(400);
         } finally {
             deleteContents(root);
         }
