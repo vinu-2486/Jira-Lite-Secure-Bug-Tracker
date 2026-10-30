@@ -8,6 +8,7 @@ import {
   ReactiveFormsModule,
   Validators,
 } from '@angular/forms';
+import { Subscription } from 'rxjs';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from './auth.service';
 import {
@@ -38,10 +39,15 @@ export class WorkspaceComponent implements OnInit {
   selectedDetail: BugDetail | null = null;
   comments: BugComment[] = [];
   history: HistoryEvent[] = [];
+  commentsLoading = false;
+  commentsError = '';
+  historyLoading = false;
+  historyError = '';
   detailLoading = false;
   detailError = '';
   commentBody = '';
   commentSubmitting = false;
+  commentSubmitError = '';
   actionSubmitting = false;
   editTitle = '';
   editDescription = '';
@@ -52,7 +58,7 @@ export class WorkspaceComponent implements OnInit {
   assigneeUserId = '';
   assignSubmitting = false;
   referenceBug: Bug | null = null;
-  loadingProjects = true;
+  loadingProjects = false;
   loadingBugs = false;
   projectsError = '';
   bugsError = '';
@@ -62,6 +68,9 @@ export class WorkspaceComponent implements OnInit {
   showCreateForm = false;
   creating = false;
   createError = '';
+  private issueSelectionId = 0;
+  private commentsLoadSubscription?: Subscription;
+  private historyLoadSubscription?: Subscription;
   readonly priorities: BugPriority[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
   readonly severities: BugSeverity[] = ['TRIVIAL', 'MINOR', 'MAJOR', 'CRITICAL'];
   readonly statuses: BugStatus[] = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED', 'REOPENED'];
@@ -162,6 +171,7 @@ export class WorkspaceComponent implements OnInit {
   }
 
   switchToDemo(): void {
+    this.resetIssueDetailState();
     this.mode = 'demo';
     this.selectedProject = null;
     this.selectedBug = this.demoBugs[0];
@@ -170,6 +180,7 @@ export class WorkspaceComponent implements OnInit {
   }
 
   switchToReal(): void {
+    this.resetIssueDetailState();
     this.mode = 'real';
     this.selectedBug = null;
     this.resetFilters();
@@ -181,6 +192,7 @@ export class WorkspaceComponent implements OnInit {
   }
 
   selectProject(project: Project): void {
+    this.resetIssueDetailState();
     this.mode = 'real';
     this.selectedProject = project;
     this.selectedBug = null;
@@ -191,15 +203,19 @@ export class WorkspaceComponent implements OnInit {
   }
 
   selectBug(bug: Bug): void {
+    this.resetIssueDetailState();
     this.selectedBug = bug;
     this.selectedDetail = null;
-    this.comments = [];
-    this.history = [];
     this.detailError = '';
     if (this.mode === 'real' && this.selectedProject) {
+      const selectionId = this.issueSelectionId;
+      const projectId = this.selectedProject.id;
       this.detailLoading = true;
-      this.workspace.getBug(this.selectedProject.id, bug.id).subscribe({
+      this.loadComments(selectionId, projectId, bug.id);
+      this.loadHistory(selectionId, projectId, bug.id);
+      this.workspace.getBug(projectId, bug.id).subscribe({
         next: (detail) => {
+          if (selectionId !== this.issueSelectionId) return;
           this.selectedDetail = detail;
           this.editTitle = detail.bug.title;
           this.editDescription = detail.bug.description;
@@ -207,16 +223,9 @@ export class WorkspaceComponent implements OnInit {
           this.editSeverity = detail.bug.severity;
           this.editError = '';
           this.detailLoading = false;
-          this.workspace.getComments(this.selectedProject!.id, bug.id).subscribe({
-            next: (comments) => (this.comments = comments),
-            error: () => (this.comments = []),
-          });
-          this.workspace.getHistory(this.selectedProject!.id, bug.id).subscribe({
-            next: (history) => (this.history = history),
-            error: () => (this.history = []),
-          });
         },
         error: (error) => {
+          if (selectionId !== this.issueSelectionId) return;
           this.detailLoading = false;
           this.handleRequestError(error, 'Issue details could not be loaded.');
         },
@@ -225,27 +234,90 @@ export class WorkspaceComponent implements OnInit {
   }
 
   addComment(): void {
-    if (
-      !this.selectedProject ||
-      !this.selectedBug ||
-      !this.commentBody.trim() ||
-      this.commentSubmitting
-    )
-      return;
+    const project = this.selectedProject;
+    const bug = this.selectedBug;
+    const draft = this.commentBody;
+    const body = draft.trim();
+    const selectionId = this.issueSelectionId;
+    if (!project || !bug || !body || this.commentSubmitting) return;
+
     this.commentSubmitting = true;
-    this.workspace
-      .addComment(this.selectedProject.id, this.selectedBug.id, this.commentBody.trim())
-      .subscribe({
-        next: (comment) => {
-          this.comments = [...this.comments, comment];
-          this.commentBody = '';
-          this.commentSubmitting = false;
-        },
-        error: (error) => {
-          this.commentSubmitting = false;
-          this.handleRequestError(error, 'Comment could not be added.');
-        },
-      });
+    this.commentSubmitError = '';
+    this.workspace.addComment(project.id, bug.id, body).subscribe({
+      next: () => {
+        if (selectionId !== this.issueSelectionId) return;
+        this.commentSubmitting = false;
+        if (this.commentBody === draft) this.commentBody = '';
+        this.loadComments(selectionId, project.id, bug.id, true);
+        this.loadHistory(selectionId, project.id, bug.id, true);
+      },
+      error: (error) => {
+        if (selectionId !== this.issueSelectionId) return;
+        this.commentSubmitting = false;
+        this.commentSubmitError = 'Comment could not be added.';
+        this.redirectOnUnauthorized(error);
+      },
+    });
+  }
+
+  retryComments(): void {
+    if (!this.selectedProject || !this.selectedBug) return;
+    this.loadComments(this.issueSelectionId, this.selectedProject.id, this.selectedBug.id);
+  }
+
+  retryHistory(): void {
+    if (!this.selectedProject || !this.selectedBug) return;
+    this.loadHistory(this.issueSelectionId, this.selectedProject.id, this.selectedBug.id);
+  }
+
+  formatHistoryEventType(eventType: string): string {
+    const labels: Record<string, string> = {
+      FIELD_EDIT: 'Issue fields edited',
+      STATUS_CHANGE: 'Status changed',
+      ASSIGNMENT: 'Assignee changed',
+      COMMENT: 'Comment added',
+      COMMIT: 'Commit linked',
+      PULL_REQUEST: 'Pull request linked',
+      CREATED: 'Issue created',
+    };
+    return labels[eventType] ?? eventType.replaceAll('_', ' ').toLowerCase();
+  }
+
+  historyActorLabel(event: HistoryEvent): string {
+    if (event.externalAuthor) return `GitHub author: ${event.externalAuthor}`;
+    if (event.actorId !== null) return `User ID ${event.actorId}`;
+    return 'External activity (author not provided)';
+  }
+
+  historyEventSummary(event: HistoryEvent): string {
+    if (event.eventType === 'COMMENT') {
+      return event.reason ?? 'Comment text was not provided.';
+    }
+    if (event.eventType === 'STATUS_CHANGE') {
+      const change = `${this.formatHistoryValue(event.oldValue)} → ${this.formatHistoryValue(event.newValue)}`;
+      return event.reason ? `${change}\nReason: ${event.reason}` : change;
+    }
+    if (event.eventType === 'ASSIGNMENT') {
+      return `${this.formatAssignee(event.oldValue)} → ${this.formatAssignee(event.newValue)}`;
+    }
+    return event.newValue ?? event.reason ?? 'No event details were provided.';
+  }
+
+  safeExternalUrl(value: string | null): string | null {
+    if (!value) return null;
+    const match = value.match(/https?:\/\/[^\s<>"']+/i);
+    if (!match) return null;
+    const candidate = match[0].replace(/[),.;!?]+$/, '');
+    try {
+      const url = new URL(candidate);
+      return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null;
+    } catch {
+      return null;
+    }
+  }
+
+  isExternalHistoryEvent(eventType: string): boolean {
+    return eventType === 'COMMIT' || eventType === 'PULL_REQUEST';
   }
 
   saveEdit(): void {
@@ -308,6 +380,8 @@ export class WorkspaceComponent implements OnInit {
 
   transition(status: BugStatus): void {
     if (!this.selectedProject || !this.selectedDetail || this.actionSubmitting) return;
+    const selectionId = this.issueSelectionId;
+    const projectId = this.selectedProject.id;
     const reason =
       status === 'CLOSED' || status === 'REOPENED' ? window.prompt('Enter a reason') || '' : '';
     if ((status === 'CLOSED' || status === 'REOPENED') && !reason.trim()) return;
@@ -322,16 +396,15 @@ export class WorkspaceComponent implements OnInit {
       )
       .subscribe({
         next: (bug) => {
+          if (selectionId !== this.issueSelectionId) return;
           this.replaceBug(bug);
           this.selectedBug = bug;
           this.selectedDetail = { bug, allowedActions: this.selectedDetail!.allowedActions };
           this.actionSubmitting = false;
-          this.workspace.getHistory(this.selectedProject!.id, bug.id).subscribe({
-            next: (history) => (this.history = history),
-            error: () => undefined,
-          });
+          this.loadHistory(selectionId, projectId, bug.id, true);
         },
         error: (error) => {
+          if (selectionId !== this.issueSelectionId) return;
           this.actionSubmitting = false;
           this.handleRequestError(error, 'Issue status could not be changed.');
         },
@@ -371,6 +444,10 @@ export class WorkspaceComponent implements OnInit {
     this.referenceBug = null;
   }
 
+  retryProjects(): void {
+    this.loadProjects();
+  }
+
   onReferenceKeydown(event: KeyboardEvent): void {
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -407,6 +484,7 @@ export class WorkspaceComponent implements OnInit {
   }
 
   private loadProjects(): void {
+    if (this.loadingProjects) return;
     this.loadingProjects = true;
     this.projectsError = '';
     this.workspace.getProjects().subscribe({
@@ -437,11 +515,7 @@ export class WorkspaceComponent implements OnInit {
   }
 
   private handleRequestError(error: { status?: number }, fallback: string): void {
-    if (error.status === 401) {
-      this.auth.currentUser.set(null);
-      this.router.navigate(['/login']);
-      return;
-    }
+    if (this.redirectOnUnauthorized(error)) return;
     if (fallback === 'Issues could not be loaded.') this.bugsError = fallback;
     else if (fallback === 'Issue details could not be loaded.') this.detailError = fallback;
     else if (fallback === 'Issue could not be updated.') this.editError = fallback;
@@ -452,5 +526,84 @@ export class WorkspaceComponent implements OnInit {
 
   private replaceBug(bug: Bug): void {
     this.bugs = this.bugs.map((existing) => (existing.id === bug.id ? bug : existing));
+  }
+
+  private resetIssueDetailState(): void {
+    this.issueSelectionId++;
+    this.commentsLoadSubscription?.unsubscribe();
+    this.historyLoadSubscription?.unsubscribe();
+    this.commentsLoadSubscription = undefined;
+    this.historyLoadSubscription = undefined;
+    this.comments = [];
+    this.history = [];
+    this.commentsLoading = false;
+    this.commentsError = '';
+    this.historyLoading = false;
+    this.historyError = '';
+    this.commentBody = '';
+    this.commentSubmitting = false;
+    this.commentSubmitError = '';
+    this.detailLoading = false;
+    this.detailError = '';
+    this.actionSubmitting = false;
+  }
+
+  private loadComments(selectionId: number, projectId: number, bugId: number, force = false): void {
+    if (selectionId !== this.issueSelectionId) return;
+    if (this.commentsLoading && !force) return;
+    if (force) this.commentsLoadSubscription?.unsubscribe();
+
+    this.commentsLoading = true;
+    this.commentsError = '';
+    this.commentsLoadSubscription = this.workspace.getComments(projectId, bugId).subscribe({
+      next: (comments) => {
+        if (selectionId !== this.issueSelectionId) return;
+        this.comments = comments;
+        this.commentsLoading = false;
+      },
+      error: (error) => {
+        if (selectionId !== this.issueSelectionId) return;
+        this.commentsLoading = false;
+        this.commentsError = 'Comments could not be loaded.';
+        this.redirectOnUnauthorized(error);
+      },
+    });
+  }
+
+  private loadHistory(selectionId: number, projectId: number, bugId: number, force = false): void {
+    if (selectionId !== this.issueSelectionId) return;
+    if (this.historyLoading && !force) return;
+    if (force) this.historyLoadSubscription?.unsubscribe();
+
+    this.historyLoading = true;
+    this.historyError = '';
+    this.historyLoadSubscription = this.workspace.getHistory(projectId, bugId).subscribe({
+      next: (history) => {
+        if (selectionId !== this.issueSelectionId) return;
+        this.history = history;
+        this.historyLoading = false;
+      },
+      error: (error) => {
+        if (selectionId !== this.issueSelectionId) return;
+        this.historyLoading = false;
+        this.historyError = 'Activity could not be loaded.';
+        this.redirectOnUnauthorized(error);
+      },
+    });
+  }
+
+  private formatHistoryValue(value: string | null): string {
+    return value ? value.replaceAll('_', ' ').toLowerCase() : 'Unknown status';
+  }
+
+  private formatAssignee(value: string | null): string {
+    return value ? `User ID ${value}` : 'Unassigned';
+  }
+
+  private redirectOnUnauthorized(error: { status?: number }): boolean {
+    if (error.status !== 401) return false;
+    this.auth.currentUser.set(null);
+    this.router.navigate(['/login']);
+    return true;
   }
 }

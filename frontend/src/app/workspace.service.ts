@@ -59,7 +59,7 @@ export interface Comment {
 
 export interface HistoryEvent {
   id: number;
-  actorId: number;
+  actorId: number | null;
   eventType: string;
   oldValue: string | null;
   newValue: string | null;

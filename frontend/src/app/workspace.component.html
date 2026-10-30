@@ -58,11 +58,19 @@
       </button>
       <div *ngIf="loadingProjects" class="sidebar-state">Loading projects…</div>
       <div *ngIf="projectsError" class="sidebar-error" role="alert">{{ projectsError }}</div>
+      <button
+        *ngIf="projectsError && !loadingProjects"
+        type="button"
+        class="project-retry"
+        (click)="retryProjects()"
+      >
+        Retry loading projects
+      </button>
       <div
         *ngIf="!loadingProjects && !projectsError && projects.length === 0"
         class="sidebar-state"
       >
-        No projects available
+        No projects yet
       </div>
       <button
         *ngFor="let project of projects"
@@ -85,11 +93,17 @@
         </button>
       </div>
       <div
-        *ngIf="mode === 'real' && !selectedProject && !loadingProjects && !projects.length"
+        *ngIf="
+          mode === 'real' &&
+          !selectedProject &&
+          !loadingProjects &&
+          !projectsError &&
+          !projects.length
+        "
         class="no-project-state"
       >
         <p class="workspace-eyebrow">Real workspace</p>
-        <h1>No projects available</h1>
+        <h1>No projects yet</h1>
         <p>You are not a member of any projects yet.</p>
         <button type="button" class="secondary-button" (click)="switchToDemo()">
           View demo workspace
@@ -369,8 +383,11 @@
                 <tr
                   *ngFor="let bug of filteredBugs"
                   [class.active]="selectedBug?.key === bug.key"
+                  [attr.aria-label]="'Open issue ' + bug.key + ': ' + bug.title"
+                  [attr.aria-selected]="selectedBug?.key === bug.key"
                   (click)="selectBug(bug)"
                   (keydown.enter)="selectBug(bug)"
+                  (keydown.space)="$event.preventDefault(); selectBug(bug)"
                   tabindex="0"
                 >
                   <td class="bug-key">{{ bug.key }}</td>
@@ -534,36 +551,88 @@
               {{ assignSubmitting ? 'Assigning…' : 'Assign' }}
             </button>
           </form>
-          <div class="detail-history">
-            <h3>History</h3>
-            <p *ngIf="!history.length">No history available.</p>
-            <div *ngFor="let event of history" class="history-item">
-              <strong>{{ event.eventType }}</strong
-              ><span>{{
-                event.externalAuthor
-                  ? 'GitHub author: ' + event.externalAuthor
-                  : 'User ID ' + event.actorId
-              }}</span>
+        </ng-container>
+        <section class="detail-history" aria-labelledby="activity-timeline-heading">
+          <h3 id="activity-timeline-heading">Activity timeline</h3>
+          <p *ngIf="historyLoading" class="activity-state" role="status">Loading activity…</p>
+          <div *ngIf="historyError" class="activity-error form-error" role="alert">
+            <span>{{ historyError }}</span>
+            <button type="button" (click)="retryHistory()">Retry activity</button>
+          </div>
+          <p
+            *ngIf="!historyLoading && !historyError && history.length === 0"
+            class="activity-state"
+          >
+            No activity yet.
+          </p>
+          <article *ngFor="let event of history" class="history-item">
+            <div class="history-heading">
+              <strong>{{ formatHistoryEventType(event.eventType) }}</strong>
               <small>{{ formatDate(event.createdAt) }}</small>
             </div>
+            <span class="history-actor">{{ historyActorLabel(event) }}</span>
+            <ng-container [ngSwitch]="event.eventType">
+              <div *ngSwitchCase="'FIELD_EDIT'" class="history-snapshot">
+                <p>
+                  <strong>Before</strong><span>{{ event.oldValue ?? 'No previous snapshot' }}</span>
+                </p>
+                <p>
+                  <strong>After</strong><span>{{ event.newValue ?? 'No updated snapshot' }}</span>
+                </p>
+              </div>
+              <p *ngSwitchDefault class="history-details">{{ historyEventSummary(event) }}</p>
+            </ng-container>
+            <ng-container *ngIf="isExternalHistoryEvent(event.eventType)">
+              <a
+                *ngIf="safeExternalUrl(event.newValue) as externalUrl"
+                class="history-link"
+                [href]="externalUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Open verified external link
+              </a>
+            </ng-container>
+          </article>
+        </section>
+        <section class="comment-box" aria-labelledby="comments-heading">
+          <h3 id="comments-heading">Comments</h3>
+          <p *ngIf="commentsLoading" class="activity-state" role="status">Loading comments…</p>
+          <div *ngIf="commentsError" class="activity-error form-error" role="alert">
+            <span>{{ commentsError }}</span>
+            <button type="button" (click)="retryComments()">Retry comments</button>
           </div>
-          <div class="comment-box">
-            <label for="comment-body">Add comment</label>
-            <textarea
-              id="comment-body"
-              rows="3"
-              [(ngModel)]="commentBody"
-              [ngModelOptions]="{ standalone: true }"
-            ></textarea>
-            <button
-              type="button"
-              [disabled]="commentSubmitting || !commentBody.trim()"
-              (click)="addComment()"
-            >
-              {{ commentSubmitting ? 'Adding…' : 'Add comment' }}
-            </button>
-          </div>
-        </ng-container>
+          <p
+            *ngIf="!commentsLoading && !commentsError && comments.length === 0"
+            class="activity-state"
+          >
+            No comments yet.
+          </p>
+          <article *ngFor="let comment of comments" class="comment-item">
+            <div class="history-heading">
+              <strong>User ID {{ comment.authorId }}</strong>
+              <small>{{ formatDate(comment.createdAt) }}</small>
+            </div>
+            <p>{{ comment.body }}</p>
+          </article>
+          <label for="comment-body">Add comment</label>
+          <textarea
+            id="comment-body"
+            rows="3"
+            [(ngModel)]="commentBody"
+            [ngModelOptions]="{ standalone: true }"
+          ></textarea>
+          <p *ngIf="commentSubmitError" class="form-error" role="alert">
+            {{ commentSubmitError }}
+          </p>
+          <button
+            type="button"
+            [disabled]="commentSubmitting || !commentBody.trim()"
+            (click)="addComment()"
+          >
+            {{ commentSubmitting ? 'Adding…' : 'Add comment' }}
+          </button>
+        </section>
       </div>
       <div class="filter-panel">
         <div class="panel-heading">
@@ -576,7 +645,7 @@
         </button>
       </div>
       <p class="planned-side-note">
-        Assignment editing, comments, history and status changes are <strong>Planned</strong>.
+        Assignment editing and status changes are <strong>Planned</strong>.
       </p>
     </aside>
   </div>
