@@ -1,194 +1,61 @@
 <header class="site-header">
-  <div class="page-width header-inner">
-    <a class="brand" routerLink="/" aria-label="JILA home"
-      ><span class="brand-mark">J</span><span>JILA</span></a
-    >
+  <div class="header-inner">
+    <a class="brand" routerLink="/" aria-label="JILA home">
+      <span class="brand-mark">J</span>
+      <span>JILA</span>
+    </a>
     <nav aria-label="Primary navigation">
-      <a href="#board">Example board</a>
-      <a href="#detail">Ticket detail</a>
       <a class="nav-login" routerLink="/login">Log in</a>
-      <a class="nav-cta" routerLink="/register">Create account</a>
+      <a class="btn-primary" routerLink="/register">Sign up</a>
     </nav>
   </div>
 </header>
 
-<main>
-  <section class="hero page-width">
-    <div class="hero-copy">
-      <p class="eyebrow">JILA / bug tracking for small teams</p>
-      <h1>Keep the signal.<br /><span>Lose the scramble.</span></h1>
-      <p class="intro">
-        A focused place to turn rough reports into work your team can actually finish.
-      </p>
-      <div class="hero-actions">
-        <a class="button button-dark" routerLink="/register">Create account</a>
-        <a class="text-link" routerLink="/login">Log in <span aria-hidden="true">→</span></a>
-      </div>
-      <p class="planned-note">
-        Workspace UI is available; live backend integration remains unverified.
-      </p>
-    </div>
-    <div class="hero-illustration" aria-label="Example JILA bug board">
-      <div class="illustration-label">Example / project view</div>
-      <div class="mini-window">
-        <div class="window-top">
-          <span class="window-dot"></span><span class="window-title">JILA / Meadow</span
-          ><span class="window-menu">•••</span>
-        </div>
-        <div class="window-body">
-          <div class="window-sidebar">
-            <span class="sidebar-logo">J</span><span class="sidebar-line active"></span
-            ><span class="sidebar-line"></span><span class="sidebar-line short"></span>
-          </div>
-          <div class="window-board">
-            <div class="window-board-heading">
-              <span>Current work</span><span class="board-filter">All issues⌄</span>
-            </div>
-            <div class="mini-columns">
-              <div>
-                <span class="mini-column-title">OPEN <b>2</b></span>
-                <div class="mini-ticket">
-                  <strong>JILA-104</strong><span>Modal closes unexpectedly</span
-                  ><i class="priority-dot p-high"></i>
-                </div>
-                <div class="mini-ticket">
-                  <strong>JILA-101</strong><span>Update empty state copy</span
-                  ><i class="priority-dot p-low"></i>
-                </div>
-              </div>
-              <div>
-                <span class="mini-column-title">IN REVIEW <b>1</b></span>
-                <div class="mini-ticket selected">
-                  <strong>JILA-099</strong><span>Filter loses focus state</span
-                  ><i class="priority-dot p-medium"></i>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="hero-rule"></div>
+<main class="landing-main">
+  <section class="hero-section">
+    <p class="hero-eyebrow">JILA / BUG TRACKING FOR TEAMS</p>
+    <h1 class="hero-title">Keep the signal.<br /><span>Lose the scramble.</span></h1>
+    <p class="hero-subtext">
+      A focused place to turn rough reports into work your team can actually finish.
+    </p>
+    <div class="hero-actions">
+      <a class="btn-primary hero-btn" routerLink="/register">Get started</a>
+      <a class="btn-secondary hero-btn" routerLink="/login">Log in →</a>
     </div>
   </section>
 
-  <section class="product-section page-width" id="board">
-    <div class="section-intro">
-      <p class="eyebrow">01 / One view of the work</p>
-      <h2>See what needs<br /><em>attention.</em></h2>
+  <section class="features-section">
+    <div class="feature-card">
+      <p class="card-eyebrow">01 / ONE VIEW</p>
+      <h3>See what needs attention</h3>
       <p>
-        The board keeps status, ownership and priority close together. This is a styled product
-        example using sample tickets, not live project data.
+        The board keeps status, ownership and priority close together so you always know what to
+        tackle next.
       </p>
     </div>
-    <div class="board-example" aria-label="Example bug board with sample tickets">
-      <div class="example-bar">
-        <span>Example</span><strong>Meadow / Current issues</strong><span>3 columns</span>
-      </div>
-      <div class="full-board">
-        <div class="full-column">
-          <div class="column-label">Open <b>02</b></div>
-          <div class="full-ticket">
-            <span class="ticket-id">JILA-104</span>
-            <h3>Modal closes unexpectedly</h3>
-            <p>Clicking outside the dialog loses unsaved context.</p>
-            <div class="ticket-meta">
-              <span class="priority high">High priority</span><span class="assignee">AM</span>
-            </div>
-          </div>
-          <div class="full-ticket">
-            <span class="ticket-id">JILA-101</span>
-            <h3>Update empty state copy</h3>
-            <p>The first-run message needs a clearer next step.</p>
-            <div class="ticket-meta">
-              <span class="priority low">Low priority</span><span class="assignee sage">SK</span>
-            </div>
-          </div>
-        </div>
-        <div class="full-column">
-          <div class="column-label">In progress <b>01</b></div>
-          <div class="full-ticket featured">
-            <span class="ticket-id">JILA-099</span>
-            <h3>Filter loses focus state</h3>
-            <p>Keyboard users cannot see which filter is active.</p>
-            <div class="ticket-meta">
-              <span class="priority medium">Medium priority</span
-              ><span class="assignee gold">JR</span>
-            </div>
-          </div>
-        </div>
-        <div class="full-column muted-column">
-          <div class="column-label">Resolved <b>01</b></div>
-          <div class="full-ticket resolved">
-            <span class="ticket-id">JILA-096</span>
-            <h3>Mobile navigation spacing</h3>
-            <p>Navigation now keeps its rhythm at narrow widths.</p>
-            <div class="ticket-meta">
-              <span class="resolved-label">✓ Resolved</span><span class="assignee sage">SK</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="detail-section page-width" id="detail">
-    <div class="detail-illustration" aria-label="Example bug detail view">
-      <div class="detail-card">
-        <div class="detail-top">
-          <span class="ticket-id">JILA-099 / Example</span
-          ><span class="status-chip">In progress</span>
-        </div>
-        <h3>Filter loses focus state</h3>
-        <p class="detail-copy">
-          Keyboard users cannot see which filter is active after closing the menu.
-        </p>
-        <div class="detail-divider"></div>
-        <div class="detail-row">
-          <span>Description</span><strong>Accessibility / navigation</strong>
-        </div>
-        <div class="detail-row">
-          <span>Assigned to</span><strong><i class="assignee gold">JR</i> Jordan R.</strong>
-        </div>
-        <div class="history">
-          <span>History</span>
-          <div>
-            <b>●</b>
-            <p><strong>In progress</strong> assigned to Jordan R.<small>Today, 10:24</small></p>
-          </div>
-          <div>
-            <b>○</b>
-            <p><strong>Open</strong> issue reported<small>Yesterday, 16:08</small></p>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="section-intro detail-copy-block">
-      <p class="eyebrow">02 / Enough context</p>
-      <h2>Every ticket has<br /><em>a next step.</em></h2>
+    <div class="feature-card">
+      <p class="card-eyebrow">02 / CONTEXT</p>
+      <h3>Every ticket has a next step</h3>
       <p>
         Descriptions, owners and status history live together, so handoffs do not depend on memory.
       </p>
-      <span class="planned-note">
-        Issue actions are implemented in the workspace UI; live integration remains unverified.
-      </span>
     </div>
-  </section>
-
-  <section class="closing-section">
-    <div class="page-width closing-inner">
-      <p class="eyebrow">Start with less</p>
-      <h2>A quieter way<br />to fix things.</h2>
-      <a class="button button-light" routerLink="/register"
-        >Create account <span aria-hidden="true">→</span></a
-      >
+    <div class="feature-card">
+      <p class="card-eyebrow">03 / SIMPLICITY</p>
+      <h3>A quieter way to fix things</h3>
+      <p>
+        Keep reports, owners and progress close enough to act on without the scramble or overhead.
+      </p>
     </div>
   </section>
 </main>
 
 <footer class="site-footer">
-  <div class="page-width footer-inner">
-    <a class="brand" routerLink="/"><span class="brand-mark">J</span><span>JILA</span></a>
-    <p>Bug tracking for small teams.</p>
-    <span>Example product views / capabilities planned</span>
+  <div class="footer-inner">
+    <div class="brand">
+      <span class="brand-mark">J</span>
+      <span>JILA</span>
+    </div>
+    <p>Bug tracking for teams.</p>
   </div>
 </footer>

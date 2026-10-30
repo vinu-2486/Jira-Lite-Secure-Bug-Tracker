@@ -1035,6 +1035,10 @@ export class WorkspaceComponent implements OnInit {
     if (!this.bindingGitHubRepository) this.bindGitHubRepository();
   }
 
+  scrollToSection(id: string): void {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   private refreshProjects(): void {
     if (this.loadingProjects) {
       this.refreshProjectsAfterLoad = true;
@@ -1104,12 +1108,13 @@ export class WorkspaceComponent implements OnInit {
     this.adminUsersError = '';
     this.adminUsersLoadSubscription = this.workspace.getAdminUsers().subscribe({
       next: (users) => {
-        if (!this.isAppAdmin) return;
-        this.adminUsers = users;
-        this.adminUserEdits = Object.fromEntries(
-          users.map((user) => [user.id, { role: this.globalRoleForUser(user.role) }]),
-        );
         this.adminUsersLoading = false;
+        if (!this.isAppAdmin) return;
+        const userList = Array.isArray(users) ? users : [];
+        this.adminUsers = userList;
+        this.adminUserEdits = Object.fromEntries(
+          userList.map((user) => [user.id, { role: this.globalRoleForUser(user.role) }]),
+        );
         this.adminUsersLoaded = true;
       },
       error: (error: { status?: number }) => {

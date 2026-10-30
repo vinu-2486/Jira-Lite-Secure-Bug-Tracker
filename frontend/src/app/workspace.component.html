@@ -41,12 +41,22 @@
 
   <div class="workspace-layout">
     <aside class="project-sidebar" aria-label="Workspace navigation">
+      <div class="sidebar-brand"><span class="brand-mark">J</span><span>JILA</span></div>
       <nav class="side-nav" aria-label="Workspace sections">
-        <a class="side-nav-item active" href="#dashboard">▦ <span>Dashboard</span></a>
-        <a class="side-nav-item" href="#issues">≡ <span>Issues</span></a>
-        <a *ngIf="isAppAdmin" class="side-nav-item" href="#admin-controls">
+        <button type="button" class="side-nav-item active" (click)="scrollToSection('dashboard')">
+          ▦ <span>Dashboard</span>
+        </button>
+        <button type="button" class="side-nav-item" (click)="scrollToSection('issues')">
+          ≡ <span>Issues</span>
+        </button>
+        <button
+          *ngIf="isAppAdmin"
+          type="button"
+          class="side-nav-item"
+          (click)="scrollToSection('admin-controls')"
+        >
           ⚙ <span>Admin controls</span>
-        </a>
+        </button>
       </nav>
       <div class="sidebar-heading">
         <span>Projects</span><span class="sidebar-caption">Your view</span>
@@ -94,53 +104,6 @@
       >
         {{ showCreateProjectForm ? 'Cancel project creation' : '+ Create project' }}
       </button>
-      <form
-        *ngIf="showCreateProjectForm && isAppAdmin"
-        id="project-create-form"
-        class="project-create-form detail-edit"
-        [formGroup]="createProjectForm"
-        (ngSubmit)="createProject()"
-        novalidate
-      >
-        <h2>Create project</h2>
-        <label for="project-key">Project key</label>
-        <input id="project-key" formControlName="key" maxlength="20" />
-        <span
-          *ngIf="createProjectForm.controls.key.touched && createProjectForm.controls.key.invalid"
-          class="field-error"
-          >Key is required (20 characters max).</span
-        >
-        <label for="project-name">Name</label>
-        <input id="project-name" formControlName="name" maxlength="100" />
-        <span
-          *ngIf="createProjectForm.controls.name.touched && createProjectForm.controls.name.invalid"
-          class="field-error"
-          >Name is required (100 characters max).</span
-        >
-        <label for="project-description">Description</label>
-        <textarea
-          id="project-description"
-          formControlName="description"
-          rows="3"
-          maxlength="500"
-        ></textarea>
-        <label for="project-lead-user">Lead user ID</label>
-        <input id="project-lead-user" type="number" min="1" step="1" formControlName="leadUserId" />
-        <span
-          *ngIf="
-            createProjectForm.controls.leadUserId.touched &&
-            createProjectForm.controls.leadUserId.invalid
-          "
-          class="field-error"
-          >Enter a lead user ID.</span
-        >
-        <p *ngIf="createProjectError" class="form-error" role="alert">
-          {{ createProjectError }}
-        </p>
-        <button type="submit" class="create-submit" [disabled]="creatingProject">
-          {{ creatingProject ? 'Creating…' : 'Create project' }}
-        </button>
-      </form>
     </aside>
 
     <main class="dashboard-area" id="dashboard">
@@ -201,6 +164,86 @@
             + Create issue
           </button>
         </div>
+        <form
+          *ngIf="showCreateProjectForm && isAppAdmin"
+          id="project-create-form"
+          class="create-form"
+          [formGroup]="createProjectForm"
+          (ngSubmit)="createProject()"
+          novalidate
+        >
+          <div class="create-form-heading">
+            <div>
+              <p class="workspace-eyebrow">Admin</p>
+              <h2>Create project</h2>
+            </div>
+            <button
+              type="button"
+              class="close-button"
+              (click)="showCreateProjectForm = false"
+              aria-label="Close create project form"
+            >
+              ×
+            </button>
+          </div>
+          <div class="create-grid">
+            <div class="field">
+              <label for="project-key">Project key</label>
+              <input id="project-key" formControlName="key" maxlength="20" />
+              <span
+                *ngIf="
+                  createProjectForm.controls.key.touched && createProjectForm.controls.key.invalid
+                "
+                class="field-error"
+                >Key is required (20 characters max).</span
+              >
+            </div>
+            <div class="field">
+              <label for="project-name">Name</label>
+              <input id="project-name" formControlName="name" maxlength="100" />
+              <span
+                *ngIf="
+                  createProjectForm.controls.name.touched && createProjectForm.controls.name.invalid
+                "
+                class="field-error"
+                >Name is required (100 characters max).</span
+              >
+            </div>
+            <div class="field">
+              <label for="project-lead-user">Lead user ID</label>
+              <input
+                id="project-lead-user"
+                type="number"
+                min="1"
+                step="1"
+                formControlName="leadUserId"
+              />
+              <span
+                *ngIf="
+                  createProjectForm.controls.leadUserId.touched &&
+                  createProjectForm.controls.leadUserId.invalid
+                "
+                class="field-error"
+                >Enter a lead user ID.</span
+              >
+            </div>
+          </div>
+          <div class="field" style="margin-top: 10px">
+            <label for="project-description">Description</label>
+            <textarea
+              id="project-description"
+              formControlName="description"
+              rows="3"
+              maxlength="500"
+            ></textarea>
+          </div>
+          <p *ngIf="createProjectError" class="form-error" role="alert">
+            {{ createProjectError }}
+          </p>
+          <button type="submit" class="create-submit" [disabled]="creatingProject">
+            {{ creatingProject ? 'Creating…' : 'Create project' }}
+          </button>
+        </form>
         <section
           *ngIf="mode === 'real' && selectedProject"
           class="project-members chart-card"
@@ -609,9 +652,7 @@
           </div>
           <span>APP_ADMIN</span>
         </div>
-        <p class="heading-copy">
-          These controls use the existing admin API. Server-side authorization remains required.
-        </p>
+
         <div class="admin-grid visual-grid">
           <section aria-labelledby="admin-users-heading">
             <h3 id="admin-users-heading">Users</h3>
@@ -721,17 +762,9 @@
                 {{ creatingAdminUser ? 'Creating…' : 'Create user' }}
               </button>
             </form>
-            <p class="admin-note">
-              Account enabled state is not returned by the checked-out user-list contract, so this
-              UI does not offer an enable/disable control.
-            </p>
           </section>
           <section aria-labelledby="github-binding-heading">
             <h3 id="github-binding-heading">Bind GitHub repository</h3>
-            <p class="heading-copy">
-              Enter IDs supplied by the existing owner-side GitHub setup. This form does not install
-              an app, configure webhooks, or activate live tracking.
-            </p>
             <form
               class="detail-edit"
               [formGroup]="bindGitHubForm"

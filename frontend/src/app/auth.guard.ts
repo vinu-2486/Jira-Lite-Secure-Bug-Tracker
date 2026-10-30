@@ -12,3 +12,17 @@ export const authGuard: CanActivateFn = () => {
     catchError(() => of(router.createUrlTree(['/login']))),
   );
 };
+
+export const guestGuard: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+
+  if (auth.currentUser()) {
+    return router.createUrlTree(['/workspace']);
+  }
+
+  return auth.refreshSession().pipe(
+    map((user) => (user ? router.createUrlTree(['/workspace']) : true)),
+    catchError(() => of(true)),
+  );
+};

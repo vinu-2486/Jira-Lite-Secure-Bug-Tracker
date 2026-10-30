@@ -49,6 +49,9 @@ export class RegisterComponent {
       },
       { validators: matchingPasswords },
     );
+    if (this.auth.currentUser()) {
+      void this.router.navigate(['/workspace']);
+    }
   }
 
   submit(): void {

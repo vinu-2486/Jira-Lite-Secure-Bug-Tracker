@@ -36,6 +36,9 @@ export class LoginComponent {
       password: ['', [Validators.required, Validators.maxLength(72)]],
     });
     this.successMessage = route.snapshot.queryParamMap.get('message') ?? '';
+    if (this.auth.currentUser()) {
+      void this.router.navigate(['/workspace']);
+    }
   }
 
   submit(): void {
