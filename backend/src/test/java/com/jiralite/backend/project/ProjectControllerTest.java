@@ -19,7 +19,7 @@ class ProjectControllerTest {
     private final ProjectRepository projects = mock(ProjectRepository.class);
     private final ProjectMemberRepository members = mock(ProjectMemberRepository.class);
     private final UserRepository users = mock(UserRepository.class);
-    private final ProjectController controller = new ProjectController(projects, members, users);
+    private final ProjectController controller = new ProjectController(new ProjectService(projects, members, users));
 
     @Test
     void memberListReturnsStableUserIdOrderAndOnlyApprovedFields() throws Exception {

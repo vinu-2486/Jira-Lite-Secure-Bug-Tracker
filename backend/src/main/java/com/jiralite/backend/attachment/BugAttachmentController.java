@@ -75,6 +75,7 @@ public class BugAttachmentController {
         return ResponseEntity.ok().contentType(MediaType.parseMediaType(attachment.getContentType()))
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.attachment().filename(attachment.getOriginalName()).build().toString())
+                .header("X-Content-Type-Options", "nosniff")
                 .body(resource);
     }
 
