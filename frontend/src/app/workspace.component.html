@@ -1,4 +1,34 @@
 <div class="workspace-shell">
+  <div
+    *ngIf="referenceBug"
+    class="reference-backdrop"
+    role="presentation"
+    (click)="closeReference()"
+    (keydown)="onReferenceKeydown($event)"
+  >
+    <section
+      class="reference-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="reference-title"
+      (click)="$event.stopPropagation()"
+      (keydown)="$event.stopPropagation()"
+    >
+      <button
+        #referenceCloseButton
+        type="button"
+        class="reference-close"
+        aria-label="Close bug reference"
+        (click)="closeReference()"
+      >
+        ×
+      </button>
+      <p class="workspace-eyebrow">Saved reference</p>
+      <h2 id="reference-title">{{ referenceBug.key }}</h2>
+      <p>{{ referenceBug.title }}</p>
+      <button type="button" class="create-submit" (click)="copyReference()">Copy reference</button>
+    </section>
+  </div>
   <header class="workspace-header">
     <a class="brand" routerLink="/" aria-label="JILA home"
       ><span class="brand-mark">J</span><span>JILA</span></a
@@ -375,12 +405,165 @@
 
     <aside class="activity-panel">
       <div class="panel-heading">
-        <h2>Activity</h2>
+        <h2>{{ selectedBug && mode === 'real' ? 'Issue details' : 'Activity' }}</h2>
         <span>{{ mode === 'demo' ? 'Demo workspace' : 'Real workspace' }}</span>
       </div>
-      <div class="activity-empty">
+      <div *ngIf="mode === 'demo' || !selectedBug" class="activity-empty">
         <span class="activity-icon">◷</span><strong>Activity isn't connected yet</strong>
-        <p>Comments, history and project activity are not available in the current API.</p>
+        <p>
+          {{
+            mode === 'demo'
+              ? 'Demo records do not have activity.'
+              : 'Select an issue to view its details.'
+          }}
+        </p>
+      </div>
+      <div *ngIf="mode === 'real' && selectedBug" class="detail-panel">
+        <div *ngIf="detailLoading" class="content-state">Loading issue details…</div>
+        <div *ngIf="detailError" class="content-state error-state" role="alert">
+          {{ detailError }}
+        </div>
+        <ng-container *ngIf="selectedDetail && !detailLoading">
+          <p class="detail-key">{{ selectedDetail.bug.key }}</p>
+          <h3>{{ selectedDetail.bug.title }}</h3>
+          <p class="detail-description">{{ selectedDetail.bug.description }}</p>
+          <dl class="detail-meta">
+            <div>
+              <dt>Status</dt>
+              <dd>{{ formatStatus(selectedDetail.bug.status) }}</dd>
+            </div>
+            <div>
+              <dt>Priority</dt>
+              <dd>{{ selectedDetail.bug.priority }}</dd>
+            </div>
+            <div>
+              <dt>Severity</dt>
+              <dd>{{ selectedDetail.bug.severity }}</dd>
+            </div>
+            <div>
+              <dt>Assignee</dt>
+              <dd>
+                {{
+                  selectedDetail.bug.assigneeId
+                    ? 'User ID ' + selectedDetail.bug.assigneeId
+                    : 'Unassigned'
+                }}
+              </dd>
+            </div>
+          </dl>
+          <div class="detail-actions" *ngIf="selectedDetail.allowedActions.length">
+            <button
+              type="button"
+              *ngIf="selectedDetail.allowedActions.includes('START')"
+              [disabled]="actionSubmitting"
+              (click)="transition('IN_PROGRESS')"
+            >
+              Start
+            </button>
+            <button
+              type="button"
+              *ngIf="selectedDetail.allowedActions.includes('RESOLVE')"
+              [disabled]="actionSubmitting"
+              (click)="transition('RESOLVED')"
+            >
+              Resolve
+            </button>
+            <button
+              type="button"
+              *ngIf="selectedDetail.allowedActions.includes('CLOSE')"
+              [disabled]="actionSubmitting"
+              (click)="transition('CLOSED')"
+            >
+              Close
+            </button>
+            <button
+              type="button"
+              *ngIf="selectedDetail.allowedActions.includes('REOPEN')"
+              [disabled]="actionSubmitting"
+              (click)="transition('REOPENED')"
+            >
+              Reopen
+            </button>
+          </div>
+          <form
+            *ngIf="selectedDetail.allowedActions.includes('EDIT_FIELDS')"
+            class="detail-edit"
+            (ngSubmit)="saveEdit()"
+            novalidate
+          >
+            <h3>Edit issue</h3>
+            <label for="edit-title">Title</label>
+            <input id="edit-title" name="edit-title" [(ngModel)]="editTitle" maxlength="120" />
+            <label for="edit-description">Description</label>
+            <textarea
+              id="edit-description"
+              name="edit-description"
+              rows="4"
+              [(ngModel)]="editDescription"
+              maxlength="5000"
+            ></textarea>
+            <label for="edit-priority">Priority</label>
+            <select id="edit-priority" name="edit-priority" [(ngModel)]="editPriority">
+              <option *ngFor="let priority of priorities" [value]="priority">{{ priority }}</option>
+            </select>
+            <label for="edit-severity">Severity</label>
+            <select id="edit-severity" name="edit-severity" [(ngModel)]="editSeverity">
+              <option *ngFor="let severity of severities" [value]="severity">{{ severity }}</option>
+            </select>
+            <p *ngIf="editError" class="form-error" role="alert">{{ editError }}</p>
+            <button type="submit" [disabled]="editSubmitting">
+              {{ editSubmitting ? 'Saving…' : 'Save changes' }}
+            </button>
+          </form>
+          <form
+            *ngIf="selectedDetail.allowedActions.includes('ASSIGN')"
+            class="detail-edit"
+            (ngSubmit)="assignIssue()"
+            novalidate
+          >
+            <h3>Assign issue</h3>
+            <label for="assignee-user-id">Existing project member user ID</label>
+            <input
+              id="assignee-user-id"
+              name="assignee-user-id"
+              type="number"
+              min="1"
+              [(ngModel)]="assigneeUserId"
+            />
+            <button type="submit" [disabled]="assignSubmitting || !assigneeUserId">
+              {{ assignSubmitting ? 'Assigning…' : 'Assign' }}
+            </button>
+          </form>
+          <div class="detail-history">
+            <h3>History</h3>
+            <p *ngIf="!history.length">No history available.</p>
+            <div *ngFor="let event of history" class="history-item">
+              <strong>{{ event.eventType }}</strong
+              ><span>{{
+                event.externalAuthor
+                  ? 'GitHub author: ' + event.externalAuthor
+                  : 'User ID ' + event.actorId
+              }}</span>
+              <small>{{ formatDate(event.createdAt) }}</small>
+            </div>
+          </div>
+          <div class="comment-box">
+            <label for="comment-body">Add comment</label>
+            <textarea
+              id="comment-body"
+              rows="3"
+              [(ngModel)]="commentBody"
+              [ngModelOptions]="{ standalone: true }"
+            ></textarea>
+            <button
+              type="button"
+              [disabled]="commentSubmitting || !commentBody.trim()"
+              (click)="addComment()"
+            >
+              {{ commentSubmitting ? 'Adding…' : 'Add comment' }}
+            </button>
+          </div>
+        </ng-container>
       </div>
       <div class="filter-panel">
         <div class="panel-heading">

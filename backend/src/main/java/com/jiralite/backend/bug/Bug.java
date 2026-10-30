@@ -153,4 +153,12 @@ public class Bug {
     public Instant getUpdatedAt() {
         return updatedAt;
     }
+
+    public void setTitle(String title) { this.title = title; }
+    public void setDescription(String description) { this.description = description; }
+    public void setPriority(BugPriority priority) { this.priority = priority; }
+    public void setSeverity(BugSeverity severity) { this.severity = severity; }
+    public void setAssignee(User assignee) { this.assignee = assignee; }
+    public void setStatus(BugStatus status) { this.status = status; }
+    public void setResolution(String resolution) { this.resolution = resolution; }
 }

@@ -26,7 +26,7 @@ server:
       cookie:
         http-only: true
         same-site: lax
-        secure: false
+        secure: ${SESSION_COOKIE_SECURE:false}
 
 jiralite:
   attachments:

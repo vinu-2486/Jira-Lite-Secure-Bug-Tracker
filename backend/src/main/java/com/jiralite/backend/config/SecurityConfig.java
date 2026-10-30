@@ -1,5 +1,6 @@
 package com.jiralite.backend.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -24,6 +25,11 @@ public class SecurityConfig {
     }
 
     @Bean
+    ObjectMapper objectMapper() {
+        return new ObjectMapper();
+    }
+
+    @Bean
     AuthenticationManager authenticationManager(AuthenticationConfiguration cfg) throws Exception {
         return cfg.getAuthenticationManager();
     }
@@ -38,8 +44,9 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/signup").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/integrations/github/webhook").permitAll()
                 .requestMatchers("/actuator/health").permitAll()
-                .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                .requestMatchers("/api/admin/**").hasRole("APP_ADMIN")
                 .anyRequest().authenticated())           // deny by default
             .exceptionHandling(e -> e
                 .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))) // 401, not a redirect

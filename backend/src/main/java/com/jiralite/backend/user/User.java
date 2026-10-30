@@ -21,7 +21,7 @@ public class User {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private Role role;
+    private GlobalRole role;
 
     @Column(nullable = false)
     private boolean enabled = true;
@@ -34,7 +34,7 @@ public class User {
 
     protected User() {}  // JPA
 
-    public User(String email, String displayName, String passwordHash, Role role) {
+    public User(String email, String displayName, String passwordHash, GlobalRole role) {
         this.email = email;
         this.displayName = displayName;
         this.passwordHash = passwordHash;
@@ -45,13 +45,13 @@ public class User {
     public String getEmail() { return email; }
     public String getDisplayName() { return displayName; }
     public String getPasswordHash() { return passwordHash; }
-    public Role getRole() { return role; }
+    public GlobalRole getRole() { return role; }
     public boolean isEnabled() { return enabled; }
     public int getFailedAttempts() { return failedAttempts; }
     public Instant getLockedUntil() { return lockedUntil; }
 
     public void setFailedAttempts(int v) { this.failedAttempts = v; }
     public void setLockedUntil(Instant v) { this.lockedUntil = v; }
-    public void setRole(Role role) { this.role = role; }
+    public void setRole(GlobalRole role) { this.role = role; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
 }

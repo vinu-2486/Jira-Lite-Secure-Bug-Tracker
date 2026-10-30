@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
 import {
   FormBuilder,
   FormControl,
@@ -12,9 +12,12 @@ import { Router, RouterLink } from '@angular/router';
 import { AuthService } from './auth.service';
 import {
   Bug,
+  BugDetail,
   BugPriority,
   BugSeverity,
   BugStatus,
+  Comment as BugComment,
+  HistoryEvent,
   CreateBugRequest,
   Project,
   WorkspaceService,
@@ -26,11 +29,29 @@ import {
   styleUrl: './workspace.component.css',
 })
 export class WorkspaceComponent implements OnInit {
+  @ViewChild('referenceCloseButton') referenceCloseButton?: ElementRef<HTMLButtonElement>;
   mode: 'demo' | 'real' = 'demo';
   projects: Project[] = [];
   bugs: Bug[] = [];
   selectedProject: Project | null = null;
   selectedBug: Bug | null = null;
+  selectedDetail: BugDetail | null = null;
+  comments: BugComment[] = [];
+  history: HistoryEvent[] = [];
+  detailLoading = false;
+  detailError = '';
+  commentBody = '';
+  commentSubmitting = false;
+  actionSubmitting = false;
+  editTitle = '';
+  editDescription = '';
+  editPriority: BugPriority = 'MEDIUM';
+  editSeverity: BugSeverity = 'MAJOR';
+  editSubmitting = false;
+  editError = '';
+  assigneeUserId = '';
+  assignSubmitting = false;
+  referenceBug: Bug | null = null;
   loadingProjects = true;
   loadingBugs = false;
   projectsError = '';
@@ -46,6 +67,7 @@ export class WorkspaceComponent implements OnInit {
   readonly statuses: BugStatus[] = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED', 'REOPENED'];
   readonly demoBugs: Bug[] = [
     {
+      id: 101,
       key: 'DEMO-101',
       projectId: 0,
       title: 'Login button overlaps password field on mobile',
@@ -61,6 +83,7 @@ export class WorkspaceComponent implements OnInit {
       updatedAt: '2026-01-15T10:00:00Z',
     },
     {
+      id: 102,
       key: 'DEMO-102',
       projectId: 0,
       title: 'Issue title is cut off on narrow screens',
@@ -169,6 +192,150 @@ export class WorkspaceComponent implements OnInit {
 
   selectBug(bug: Bug): void {
     this.selectedBug = bug;
+    this.selectedDetail = null;
+    this.comments = [];
+    this.history = [];
+    this.detailError = '';
+    if (this.mode === 'real' && this.selectedProject) {
+      this.detailLoading = true;
+      this.workspace.getBug(this.selectedProject.id, bug.id).subscribe({
+        next: (detail) => {
+          this.selectedDetail = detail;
+          this.editTitle = detail.bug.title;
+          this.editDescription = detail.bug.description;
+          this.editPriority = detail.bug.priority;
+          this.editSeverity = detail.bug.severity;
+          this.editError = '';
+          this.detailLoading = false;
+          this.workspace.getComments(this.selectedProject!.id, bug.id).subscribe({
+            next: (comments) => (this.comments = comments),
+            error: () => (this.comments = []),
+          });
+          this.workspace.getHistory(this.selectedProject!.id, bug.id).subscribe({
+            next: (history) => (this.history = history),
+            error: () => (this.history = []),
+          });
+        },
+        error: (error) => {
+          this.detailLoading = false;
+          this.handleRequestError(error, 'Issue details could not be loaded.');
+        },
+      });
+    }
+  }
+
+  addComment(): void {
+    if (
+      !this.selectedProject ||
+      !this.selectedBug ||
+      !this.commentBody.trim() ||
+      this.commentSubmitting
+    )
+      return;
+    this.commentSubmitting = true;
+    this.workspace
+      .addComment(this.selectedProject.id, this.selectedBug.id, this.commentBody.trim())
+      .subscribe({
+        next: (comment) => {
+          this.comments = [...this.comments, comment];
+          this.commentBody = '';
+          this.commentSubmitting = false;
+        },
+        error: (error) => {
+          this.commentSubmitting = false;
+          this.handleRequestError(error, 'Comment could not be added.');
+        },
+      });
+  }
+
+  saveEdit(): void {
+    if (!this.selectedProject || !this.selectedDetail || this.editSubmitting) return;
+    if (this.editTitle.trim().length < 5 || !this.editDescription.trim()) {
+      this.editError = 'Title and description are required.';
+      return;
+    }
+
+    this.editSubmitting = true;
+    this.editError = '';
+    this.workspace
+      .updateBug(this.selectedProject.id, this.selectedDetail.bug.id, {
+        title: this.editTitle,
+        description: this.editDescription,
+        priority: this.editPriority,
+        severity: this.editSeverity,
+        version: this.selectedDetail.bug.version,
+      })
+      .subscribe({
+        next: (bug) => {
+          this.replaceBug(bug);
+          this.selectedBug = bug;
+          this.selectedDetail = { ...this.selectedDetail!, bug };
+          this.editSubmitting = false;
+        },
+        error: (error) => {
+          this.editSubmitting = false;
+          this.handleRequestError(error, 'Issue could not be updated.');
+        },
+      });
+  }
+
+  assignIssue(): void {
+    if (!this.selectedProject || !this.selectedDetail || this.assignSubmitting) return;
+    const userId = Number(this.assigneeUserId);
+    if (!Number.isInteger(userId) || userId < 1) return;
+    this.assignSubmitting = true;
+    this.workspace
+      .assignBug(
+        this.selectedProject.id,
+        this.selectedDetail.bug.id,
+        userId,
+        this.selectedDetail.bug.version,
+      )
+      .subscribe({
+        next: (bug) => {
+          this.replaceBug(bug);
+          this.selectedBug = bug;
+          this.selectedDetail = { ...this.selectedDetail!, bug };
+          this.assigneeUserId = '';
+          this.assignSubmitting = false;
+        },
+        error: (error) => {
+          this.assignSubmitting = false;
+          this.handleRequestError(error, 'Issue could not be assigned.');
+        },
+      });
+  }
+
+  transition(status: BugStatus): void {
+    if (!this.selectedProject || !this.selectedDetail || this.actionSubmitting) return;
+    const reason =
+      status === 'CLOSED' || status === 'REOPENED' ? window.prompt('Enter a reason') || '' : '';
+    if ((status === 'CLOSED' || status === 'REOPENED') && !reason.trim()) return;
+    this.actionSubmitting = true;
+    this.workspace
+      .transitionBug(
+        this.selectedProject.id,
+        this.selectedDetail.bug.id,
+        status,
+        this.selectedDetail.bug.version,
+        reason,
+      )
+      .subscribe({
+        next: (bug) => {
+          this.replaceBug(bug);
+          this.selectedBug = bug;
+          this.selectedDetail = { bug, allowedActions: this.selectedDetail!.allowedActions };
+          this.actionSubmitting = false;
+          this.workspace.getHistory(this.selectedProject!.id, bug.id).subscribe({
+            next: (history) => (this.history = history),
+            error: () => undefined,
+          });
+        },
+        error: (error) => {
+          this.actionSubmitting = false;
+          this.handleRequestError(error, 'Issue status could not be changed.');
+        },
+      });
   }
 
   submitBug(): void {
@@ -182,6 +349,8 @@ export class WorkspaceComponent implements OnInit {
       next: (bug) => {
         this.bugs = [bug, ...this.bugs.filter((existing) => existing.key !== bug.key)];
         this.selectedBug = bug;
+        this.referenceBug = bug;
+        setTimeout(() => this.referenceCloseButton?.nativeElement.focus());
         this.createForm.reset({
           title: '',
           description: '',
@@ -196,6 +365,21 @@ export class WorkspaceComponent implements OnInit {
         this.handleRequestError(error, 'We could not create this issue.');
       },
     });
+  }
+
+  closeReference(): void {
+    this.referenceBug = null;
+  }
+
+  onReferenceKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.closeReference();
+    }
+  }
+
+  copyReference(): void {
+    if (this.referenceBug) void navigator.clipboard.writeText(this.referenceBug.key);
   }
 
   formatStatus(status: BugStatus): string {
@@ -259,7 +443,14 @@ export class WorkspaceComponent implements OnInit {
       return;
     }
     if (fallback === 'Issues could not be loaded.') this.bugsError = fallback;
+    else if (fallback === 'Issue details could not be loaded.') this.detailError = fallback;
+    else if (fallback === 'Issue could not be updated.') this.editError = fallback;
+    else if (fallback !== 'Projects could not be loaded.') this.detailError = fallback;
     else if (fallback === 'Projects could not be loaded.') this.projectsError = fallback;
     else this.createError = fallback;
+  }
+
+  private replaceBug(bug: Bug): void {
+    this.bugs = this.bugs.map((existing) => (existing.id === bug.id ? bug : existing));
   }
 }

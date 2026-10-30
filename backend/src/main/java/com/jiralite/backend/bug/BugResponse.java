@@ -3,6 +3,7 @@ package com.jiralite.backend.bug;
 import java.time.Instant;
 
 public record BugResponse(
+        Long id,
         String key,
         Long projectId,
         String title,
@@ -19,6 +20,7 @@ public record BugResponse(
 ) {
     public static BugResponse from(Bug bug) {
         return new BugResponse(
+                bug.getId(),
                 bug.getBugKey(),
                 bug.getProject().getId(),
                 bug.getTitle(),

@@ -1,7 +1,7 @@
 package com.jiralite.backend.auth;
 
 import com.jiralite.backend.user.PasswordPolicy;
-import com.jiralite.backend.user.Role;
+import com.jiralite.backend.user.GlobalRole;
 import com.jiralite.backend.user.User;
 import com.jiralite.backend.user.UserRepository;
 import jakarta.validation.Valid;
@@ -30,7 +30,7 @@ public class SignupController {
         }
         PasswordPolicy.validate(request.password());
         User user = users.save(new User(email, request.displayName().trim(),
-                encoder.encode(request.password()), Role.REPORTER));
+                encoder.encode(request.password()), GlobalRole.USER));
         return MeResponse.from(user);
     }
 }

@@ -31,7 +31,7 @@ public class AdminBootstrap implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        if (users.existsByRole(Role.ADMIN)) return;            // only ever runs once
+        if (users.existsByRole(GlobalRole.APP_ADMIN)) return;            // only ever runs once
 
         if (email.isBlank() || password.isBlank()) {
             log.warn("No ADMIN exists. Set JIRALITE_ADMIN_EMAIL and JIRALITE_ADMIN_PASSWORD and restart.");
@@ -40,7 +40,7 @@ public class AdminBootstrap implements ApplicationRunner {
         PasswordPolicy.validate(password);
 
         users.save(new User(email.trim().toLowerCase(), "Administrator",
-                encoder.encode(password), Role.ADMIN));
+                encoder.encode(password), GlobalRole.APP_ADMIN));
         log.info("Created first administrator: {}", email);     // never log the password
     }
 }
