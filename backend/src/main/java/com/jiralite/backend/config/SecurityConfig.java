@@ -13,6 +13,7 @@ import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 @Configuration
 @EnableMethodSecurity
@@ -47,7 +48,14 @@ public class SecurityConfig {
                 .referrerPolicy(referrerPolicy -> referrerPolicy
                     .policy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy
                         .STRICT_ORIGIN_WHEN_CROSS_ORIGIN)
-                ))
+                )
+                .addHeaderWriter((request, response) -> {
+                    var authentication = SecurityContextHolder.getContext().getAuthentication();
+                    if (request.getRequestURI().startsWith("/api/")
+                            && authentication != null && authentication.isAuthenticated()) {
+                        response.setHeader("Cache-Control", "no-store");
+                    }
+                }))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/signup").permitAll()

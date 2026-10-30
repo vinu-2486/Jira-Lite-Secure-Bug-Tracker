@@ -33,11 +33,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
@@ -126,6 +128,9 @@ class AdminApiSecurityIntegrationTest {
     void adminCanCreateAndListUsersWithoutExposingCredentials() throws Exception {
         User admin = saveUser(GlobalRole.APP_ADMIN);
         String email = uniqueEmail();
+        User disabled = saveUser(uniqueEmail(), GlobalRole.USER);
+        disabled.setEnabled(false);
+        users.save(disabled);
 
         mvc.perform(post("/api/admin/users")
                         .with(as(admin)).with(csrf())
@@ -138,6 +143,8 @@ class AdminApiSecurityIntegrationTest {
 
         mvc.perform(get("/api/admin/users").with(as(admin)))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == " + disabled.getId() + ")].enabled", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.id == " + disabled.getId() + ")].enabled", contains(false)))
                 .andExpect(content().string(org.hamcrest.Matchers.not(containsString("password_hash"))))
                 .andExpect(content().string(org.hamcrest.Matchers.not(containsString("credentials"))));
         User created = users.findByEmailIgnoreCase(email).orElseThrow();
@@ -207,6 +214,57 @@ class AdminApiSecurityIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"enabled\":true}"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void adminCannotDisableOrDemoteTheirOwnAccount() throws Exception {
+        User admin = saveUser(GlobalRole.APP_ADMIN);
+
+        mvc.perform(patch("/api/admin/users/" + admin.getId()).with(as(admin)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"enabled\":false}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message", containsString("own account")));
+        mvc.perform(patch("/api/admin/users/" + admin.getId()).with(as(admin)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"role\":\"USER\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message", containsString("own account")));
+    }
+
+    @Test
+    void adminCannotRemoveLastEnabledApplicationAdmin() throws Exception {
+        User actor = saveUser(GlobalRole.APP_ADMIN);
+        actor.setEnabled(false);
+        users.save(actor);
+        User lastAdmin = saveUser(GlobalRole.APP_ADMIN);
+
+        mvc.perform(patch("/api/admin/users/" + lastAdmin.getId()).with(as(actor)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"enabled\":false}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message", containsString("last enabled")));
+        mvc.perform(patch("/api/admin/users/" + lastAdmin.getId()).with(as(actor)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"role\":\"USER\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message", containsString("last enabled")));
+    }
+
+    @Test
+    void adminCanDisableDifferentUser() throws Exception {
+        User admin = saveUser(GlobalRole.APP_ADMIN);
+        User target = saveUser(GlobalRole.USER);
+
+        mvc.perform(patch("/api/admin/users/" + target.getId()).with(as(admin)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"enabled\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enabled", is(false)));
+    }
+
+    @Test
+    void authenticatedApiResponsesAreNotStored() throws Exception {
+        User admin = saveUser(GlobalRole.APP_ADMIN);
+
+        mvc.perform(get("/api/admin/users").with(as(admin)))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store"));
     }
 
     @Test
@@ -312,8 +370,84 @@ class AdminApiSecurityIntegrationTest {
         org.assertj.core.api.Assertions.assertThat(projects.count()).isEqualTo(before);
     }
 
+    @Test
+    void coreBugWorkflowRunsThroughHttpWithSecurityAndCsrf() throws Exception {
+        User reporter = saveUser(GlobalRole.USER);
+        User lead = saveUser(GlobalRole.USER);
+        User developer = saveUser(GlobalRole.USER);
+        Project project = saveProject("FLOW");
+        members.save(new ProjectMember(project, reporter, ProjectRole.REPORTER));
+        members.save(new ProjectMember(project, lead, ProjectRole.PROJECT_LEAD));
+        members.save(new ProjectMember(project, developer, ProjectRole.DEVELOPER));
+
+        var created = mvc.perform(post("/api/projects/" + project.getId() + "/bugs")
+                        .with(as(reporter)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Workflow bug\",\"description\":\"Needs fixing\","
+                                + "\"priority\":\"HIGH\",\"severity\":\"MAJOR\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status", is("OPEN")))
+                .andReturn();
+        Long bugId = ((Number) com.jayway.jsonpath.JsonPath.read(
+                created.getResponse().getContentAsString(), "$.id")).longValue();
+        Long version = currentVersion(project.getId(), bugId, reporter);
+
+        var assigned = mvc.perform(put("/api/projects/" + project.getId() + "/bugs/" + bugId + "/assignee")
+                        .with(as(lead)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":" + developer.getId() + ",\"version\":" + version + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.assigneeId", is(developer.getId().intValue())))
+                .andReturn();
+        version = currentVersion(project.getId(), bugId, reporter);
+
+        var started = mvc.perform(post("/api/projects/" + project.getId() + "/bugs/" + bugId + "/transitions")
+                        .with(as(developer)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"IN_PROGRESS\",\"version\":" + version + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("IN_PROGRESS")))
+                .andReturn();
+        version = currentVersion(project.getId(), bugId, reporter);
+
+        var resolved = mvc.perform(post("/api/projects/" + project.getId() + "/bugs/" + bugId + "/transitions")
+                        .with(as(developer)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"RESOLVED\",\"version\":" + version + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("RESOLVED")))
+                .andReturn();
+        version = currentVersion(project.getId(), bugId, reporter);
+
+        mvc.perform(post("/api/projects/" + project.getId() + "/bugs/" + bugId + "/transitions")
+                        .with(as(reporter)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"REOPENED\",\"reason\":\"Verified fix needs more work\","
+                                + "\"version\":" + version + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("REOPENED")))
+                .andExpect(jsonPath("$.resolution", org.hamcrest.Matchers.nullValue()));
+        mvc.perform(post("/api/projects/" + project.getId() + "/bugs/" + bugId + "/comments")
+                        .with(as(reporter)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"body\":\"Workflow follow-up\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.body", is("Workflow follow-up")));
+        mvc.perform(get("/api/projects/" + project.getId() + "/bugs/" + bugId + "/history")
+                        .with(as(reporter)))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("CREATED")))
+                .andExpect(content().string(containsString("ASSIGNMENT")))
+                .andExpect(content().string(containsString("REOPENED")));
+        mvc.perform(get("/api/projects/" + project.getId() + "/bugs/" + bugId + "/comments")
+                        .with(as(reporter)))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Workflow follow-up")));
+    }
+
     private User saveUser(GlobalRole role) {
         return saveUser(uniqueEmail(), role);
+    }
+
+    private Long currentVersion(Long projectId, Long bugId, User actor) throws Exception {
+        return ((Number) com.jayway.jsonpath.JsonPath.read(
+                mvc.perform(get("/api/projects/" + projectId + "/bugs/" + bugId).with(as(actor)))
+                        .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(),
+                "$.bug.version")).longValue();
     }
 
     private User saveUser(String email, GlobalRole role) {

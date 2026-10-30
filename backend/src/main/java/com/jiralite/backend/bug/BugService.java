@@ -93,7 +93,7 @@ public class BugService {
         // Save once to generate the database ID.
         bug.setBugKey("TEMP-" + java.util.UUID.randomUUID());
 
-        bugs.saveAndFlush(bug);
+        bug = bugs.saveAndFlush(bug);
 
         // Generate the final bug key, for example P1-1.
         bug.setBugKey(project.getProjectKey() + "-" + bug.getId());
