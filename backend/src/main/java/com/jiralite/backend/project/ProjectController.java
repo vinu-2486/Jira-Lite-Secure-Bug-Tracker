@@ -31,6 +31,16 @@ public class ProjectController {
                 .toList();
     }
 
+    @GetMapping("/{projectId}/members")
+    public List<MemberResponse> listMembers(@PathVariable Long projectId,
+                                            @AuthenticationPrincipal AppUserDetails actor) {
+        members.findByProjectIdAndUserId(projectId, actor.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found"));
+        return members.findAllByProjectIdOrderByUserIdAsc(projectId).stream()
+                .map(MemberResponse::from)
+                .toList();
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ProjectResponse create(
@@ -73,6 +83,11 @@ public class ProjectController {
     }
 
     public record AddMemberRequest(@NotNull Long userId, @NotNull ProjectRole role) {}
+    public record MemberResponse(Long userId, String displayName, ProjectRole role) {
+        static MemberResponse from(ProjectMember member) {
+            return new MemberResponse(member.getUser().getId(), member.getUser().getDisplayName(), member.getRole());
+        }
+    }
     public record CreateProjectRequest(
             @NotBlank @Size(max = 20) String key,
             @NotBlank @Size(max = 100) String name,
