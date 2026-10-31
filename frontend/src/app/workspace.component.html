@@ -216,7 +216,7 @@
     </div>
   </div>
 
-  <!-- Create Issue Slide-over Panel -->
+  <!-- Create Issue Slide-over Panel (480px wide) -->
   <div *ngIf="showCreateForm" class="slideover-backdrop" (click)="closeCreateIssue()">
     <aside class="slideover-panel" (click)="$event.stopPropagation()">
       <div class="slideover-header">
@@ -233,60 +233,134 @@
           ×
         </button>
       </div>
+
       <form class="create-form" [formGroup]="createForm" (ngSubmit)="submitBug()" novalidate>
+        <!-- Field 1: Bug title (required, marked with *) -->
         <div class="field">
-          <label for="issue-title">Title</label>
+          <label for="issue-title">Bug title *</label>
           <input
             id="issue-title"
             formControlName="title"
             maxlength="120"
-            placeholder="Issue summary"
+            placeholder="Brief summary of the defect"
           />
           <span
             *ngIf="createForm.controls.title.touched && createForm.controls.title.invalid"
             class="field-error"
-            >Title must be between 5 and 120 characters.</span
           >
+            Title must be between 5 and 120 characters.
+          </span>
         </div>
+
+        <!-- Field 2: Overview (multi-line description) -->
         <div class="field">
-          <label for="issue-description">Description</label>
+          <label for="issue-description">Overview</label>
           <textarea
             id="issue-description"
             rows="5"
             formControlName="description"
             maxlength="5000"
-            placeholder="Steps to reproduce, expected result, actual result"
+            placeholder="Steps to reproduce, expected vs actual behavior…"
           ></textarea>
           <span
             *ngIf="
               createForm.controls.description.touched && createForm.controls.description.invalid
             "
             class="field-error"
-            >Description is required.</span
           >
+            Overview is required.
+          </span>
         </div>
-        <div class="create-grid">
-          <div class="field">
-            <label for="issue-priority">Priority</label>
-            <select id="issue-priority" formControlName="priority">
-              <option *ngFor="let priority of priorities" [value]="priority">
-                {{ priority }}
-              </option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="issue-severity">Severity</label>
-            <select id="issue-severity" formControlName="severity">
-              <option *ngFor="let severity of severities" [value]="severity">
-                {{ severity }}
-              </option>
-            </select>
+
+        <!-- Field 3: Priority (dropdown) -->
+        <div class="field">
+          <label for="issue-priority">Priority</label>
+          <select id="issue-priority" formControlName="priority">
+            <option *ngFor="let priority of priorities" [value]="priority">
+              {{ priority }}
+            </option>
+          </select>
+        </div>
+
+        <!-- Field 4: Attachments (file picker with a drop area) -->
+        <div class="field">
+          <label>Attachments</label>
+          <div
+            class="file-drop-area"
+            [class.drag-over]="isDraggingOver"
+            (dragover)="onDragOver($event)"
+            (dragleave)="onDragLeave($event)"
+            (drop)="onFileDrop($event)"
+          >
+            <input
+              #attachmentInput
+              type="file"
+              multiple
+              (change)="onFilesPicked($event)"
+              style="display: none"
+            />
+            <svg
+              class="drop-icon"
+              viewBox="0 0 24 24"
+              width="24"
+              height="24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            <p class="drop-text">
+              Drag and drop files here, or
+              <button type="button" class="dropzone-browse-btn" (click)="attachmentInput.click()">
+                browse
+              </button>
+            </p>
+            <span class="drop-hint">Attach logs, screenshots, or diagnostics</span>
+            <ul *ngIf="stagedAttachments.length > 0" class="staged-file-list">
+              <li *ngFor="let file of stagedAttachments; let i = index">
+                <span>{{ file.name }}</span>
+                <button
+                  type="button"
+                  class="remove-file-btn"
+                  (click)="removeStagedFile(i)"
+                  aria-label="Remove attachment"
+                >
+                  ×
+                </button>
+              </li>
+            </ul>
           </div>
         </div>
+
+        <!-- Field 5: Due date (date picker) -->
+        <div class="field">
+          <label for="issue-due-date">Due date</label>
+          <input
+            id="issue-due-date"
+            type="date"
+            [(ngModel)]="createDueDate"
+            [ngModelOptions]="{ standalone: true }"
+          />
+        </div>
+
         <p *ngIf="createError" class="form-error" role="alert">{{ createError }}</p>
-        <button type="submit" class="create-submit btn-primary" [disabled]="creating">
-          {{ creating ? 'Creating…' : 'Create issue' }}
-        </button>
+
+        <!-- Buttons: Cancel and Create at bottom; Create disabled until title filled -->
+        <div class="slideover-actions">
+          <button type="button" class="btn-secondary" (click)="closeCreateIssue()">Cancel</button>
+          <button
+            type="submit"
+            class="create-submit btn-primary"
+            [disabled]="creating || !createForm.controls.title.value?.trim()"
+          >
+            {{ creating ? 'Creating…' : 'Create' }}
+          </button>
+        </div>
       </form>
     </aside>
   </div>
@@ -300,7 +374,19 @@
         (click)="toggleMobileSidebar()"
         aria-label="Toggle menu"
       >
-        ☰
+        <svg
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+        >
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
       </button>
       <a class="brand" routerLink="/" aria-label="JILA home">
         <span class="brand-mark">J</span>
@@ -308,27 +394,20 @@
       </a>
       <span class="topbar-divider">/</span>
       <span class="topbar-project-name">
-        {{
-          selectedProject
-            ? selectedProject.name
-            : mode === 'demo'
-              ? 'Meadow (Demo)'
-              : 'Select Project'
-        }}
+        {{ selectedProject ? selectedProject.name : 'Select Project' }}
       </span>
     </div>
     <div class="topbar-right">
-      <button
-        type="button"
-        class="btn-primary create-button"
-        [disabled]="mode === 'demo'"
-        (click)="openCreateIssue()"
-      >
+      <button type="button" class="btn-primary create-button" (click)="openCreateIssue()">
         + Create issue
       </button>
       <div class="user-menu">
-        <span class="user-name">{{ currentUser?.displayName }}</span>
-        <span *ngIf="isAppAdmin" class="role-badge">Admin</span>
+        <span *ngIf="shouldShowUserDisplayName" class="user-name">{{
+          currentUser?.displayName
+        }}</span>
+        <span *ngIf="currentUser?.role" class="role-badge">{{
+          currentUser?.role === 'APP_ADMIN' ? 'ADMIN' : currentUser?.role
+        }}</span>
         <button type="button" class="btn-secondary logout-btn" (click)="logout()">Log out</button>
       </div>
     </div>
@@ -349,7 +428,22 @@
           [class.active]="activeNav === 'overview'"
           (click)="setActiveNav('overview')"
         >
-          <span class="nav-icon">📊</span>
+          <svg
+            class="nav-svg-icon"
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <rect x="3" y="3" width="7" height="9"></rect>
+            <rect x="14" y="3" width="7" height="5"></rect>
+            <rect x="14" y="12" width="7" height="9"></rect>
+            <rect x="3" y="16" width="7" height="5"></rect>
+          </svg>
           <span>Overview</span>
         </button>
         <button
@@ -358,7 +452,22 @@
           [class.active]="activeNav === 'issues'"
           (click)="setActiveNav('issues')"
         >
-          <span class="nav-icon">📋</span>
+          <svg
+            class="nav-svg-icon"
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"
+            ></path>
+            <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+          </svg>
           <span>Issues</span>
         </button>
         <button
@@ -368,7 +477,22 @@
           [class.active]="activeNav === 'admin'"
           (click)="setActiveNav('admin')"
         >
-          <span class="nav-icon">⚙️</span>
+          <svg
+            class="nav-svg-icon"
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="12" cy="12" r="3"></circle>
+            <path
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+            ></path>
+          </svg>
           <span>Admin controls</span>
         </button>
       </nav>
@@ -388,16 +512,6 @@
           </button>
         </div>
 
-        <button
-          type="button"
-          class="project-item demo-project"
-          [class.selected]="mode === 'demo'"
-          (click)="switchToDemo()"
-        >
-          <span class="project-key">DEMO</span>
-          <span class="project-title">Demo workspace</span>
-        </button>
-
         <div *ngIf="loadingProjects" class="sidebar-state">Loading projects…</div>
         <div *ngIf="projectsError" class="sidebar-error" role="alert">{{ projectsError }}</div>
         <button
@@ -409,83 +523,54 @@
           Retry loading projects
         </button>
 
+        <!-- Clean Empty State in Sidebar -->
         <div
           *ngIf="!loadingProjects && !projectsError && projects.length === 0"
-          class="sidebar-state"
+          class="sidebar-empty-state"
         >
-          No projects yet
+          <p class="sidebar-empty-title">No projects yet</p>
+          <p class="sidebar-empty-desc">An admin will add you to a project.</p>
         </div>
 
         <button
           *ngFor="let project of projects"
           type="button"
           class="project-item"
-          [class.selected]="mode === 'real' && selectedProject?.id === project.id"
+          [class.selected]="selectedProject?.id === project.id"
           (click)="selectProject(project)"
         >
           <span class="project-key">{{ project.key }}</span>
           <span class="project-title">{{ project.name }}</span>
-        </button>
-
-        <button
-          *ngIf="isAppAdmin"
-          type="button"
-          class="btn-secondary sidebar-create-proj-btn"
-          (click)="openCreateProject()"
-        >
-          + Create project
         </button>
       </div>
     </aside>
 
     <!-- Main Content Area (Centred, max-width 1200px) -->
     <main class="main-content">
-      <!-- Demo Banner -->
-      <div *ngIf="mode === 'demo'" class="demo-banner" role="status">
-        <strong>Demo data - not saved</strong>
-        <span>These two records are illustrative only.</span>
-        <button
-          type="button"
-          class="btn-secondary"
-          (click)="switchToReal()"
-          [disabled]="!projects.length"
-        >
-          View real projects
-        </button>
-      </div>
-
-      <!-- Real Empty Project State -->
+      <!-- Clean Empty State when user has no projects -->
       <div
         *ngIf="
-          mode === 'real' &&
           !selectedProject &&
           !loadingProjects &&
           !projectsError &&
-          !projects.length
+          !projects.length &&
+          activeNav !== 'admin'
         "
         class="no-project-state card"
       >
-        <p class="workspace-eyebrow">Real workspace</p>
-        <h1>No projects yet</h1>
-        <p class="empty-state-copy">You are not a member of any projects yet.</p>
-        <div class="empty-state-actions">
-          <button type="button" class="btn-secondary secondary-button" (click)="switchToDemo()">
-            View demo workspace
-          </button>
-          <button
-            *ngIf="isAppAdmin"
-            type="button"
-            class="create-submit btn-primary"
-            (click)="openCreateProject()"
-          >
+        <p class="workspace-eyebrow">Projects</p>
+        <h2>No projects yet</h2>
+        <p class="empty-state-copy">An admin will add you to a project.</p>
+        <div *ngIf="isAppAdmin" class="empty-state-actions">
+          <button type="button" class="create-submit btn-primary" (click)="openCreateProject()">
             Create project
           </button>
         </div>
       </div>
 
       <!-- Main Project Area -->
-      <div *ngIf="mode === 'demo' || selectedProject" class="project-view-container">
-        <!-- VIEW 1: OVERVIEW (4 stat cards + recent activity) -->
+      <div *ngIf="selectedProject" class="project-view-container">
+        <!-- VIEW 1: OVERVIEW DASHBOARD (Real project data) -->
         <section
           id="dashboard"
           class="view-section overview-view"
@@ -494,46 +579,337 @@
           <div class="view-header">
             <div>
               <p class="workspace-eyebrow">Project Overview</p>
-              <h2>{{ mode === 'demo' ? 'Dashboard' : selectedProject?.name }}</h2>
+              <h2>{{ selectedProject?.name }}</h2>
               <p class="view-description">
                 {{
-                  mode === 'demo'
-                    ? 'Illustrative metrics and project activity'
-                    : selectedProject?.description || 'Active bug metrics and recent activity'
+                  selectedProject?.description ||
+                    'Active defect metrics, workload distribution, and recent activity'
                 }}
               </p>
             </div>
           </div>
 
-          <!-- 4 Stat Cards -->
+          <!-- Top row: 4 Stat Tiles -->
           <div class="stat-grid">
             <article class="stat-card card">
-              <span class="stat-label">Total issues</span>
-              <strong class="stat-value">{{ totalCount }}</strong>
-              <small class="stat-caption">Loaded in current dataset</small>
+              <span class="stat-label">Resolved this week</span>
+              <ng-container *ngIf="loadingBugs; else resolvedLoaded">
+                <div class="skeleton skeleton-stat"></div>
+              </ng-container>
+              <ng-template #resolvedLoaded>
+                <strong class="stat-value">{{ resolvedThisWeekCount }}</strong>
+                <small class="stat-caption">Fixed or closed</small>
+              </ng-template>
             </article>
+
             <article class="stat-card card">
-              <span class="stat-label">Open</span>
-              <strong class="stat-value">{{ countByStatus('OPEN') }}</strong>
-              <small class="stat-caption">{{ percentByStatus('OPEN') }}% of total</small>
+              <span class="stat-label">Updated this week</span>
+              <ng-container *ngIf="loadingBugs; else updatedLoaded">
+                <div class="skeleton skeleton-stat"></div>
+              </ng-container>
+              <ng-template #updatedLoaded>
+                <strong class="stat-value">{{ updatedThisWeekCount }}</strong>
+                <small class="stat-caption">Recent changes</small>
+              </ng-template>
             </article>
+
             <article class="stat-card card">
-              <span class="stat-label">In progress</span>
-              <strong class="stat-value">{{ countByStatus('IN_PROGRESS') }}</strong>
-              <small class="stat-caption">{{ percentByStatus('IN_PROGRESS') }}% of total</small>
+              <span class="stat-label">Created this week</span>
+              <ng-container *ngIf="loadingBugs; else createdLoaded">
+                <div class="skeleton skeleton-stat"></div>
+              </ng-container>
+              <ng-template #createdLoaded>
+                <strong class="stat-value">{{ createdThisWeekCount }}</strong>
+                <small class="stat-caption">New defects logged</small>
+              </ng-template>
             </article>
+
             <article class="stat-card card">
-              <span class="stat-label">Resolved / Closed</span>
-              <strong class="stat-value">{{
-                countByStatus('RESOLVED') + countByStatus('CLOSED')
-              }}</strong>
-              <small class="stat-caption">Fixed and completed</small>
+              <span class="stat-label">Due soon (next 7 days)</span>
+              <ng-container *ngIf="loadingBugs; else dueLoaded">
+                <div class="skeleton skeleton-stat"></div>
+              </ng-container>
+              <ng-template #dueLoaded>
+                <strong class="stat-value">{{ dueSoonCount }}</strong>
+                <small class="stat-caption">Upcoming deadlines</small>
+              </ng-template>
             </article>
           </div>
 
-          <!-- Project Access / Members (when in real mode) -->
+          <!-- 2-column grid of dashboard cards -->
+          <div class="dashboard-grid">
+            <!-- Card 1: Status overview -->
+            <section class="dashboard-card card">
+              <div class="card-heading">
+                <div>
+                  <h3>Status overview</h3>
+                  <small>Distribution of issue states</small>
+                </div>
+              </div>
+              <div class="card-body">
+                <!-- Loading State (Skeleton) -->
+                <div *ngIf="loadingBugs" class="card-loading-skeleton">
+                  <div class="skeleton skeleton-circle"></div>
+                  <div class="skeleton-legend">
+                    <div class="skeleton skeleton-line" style="width: 70%"></div>
+                    <div class="skeleton skeleton-line" style="width: 50%"></div>
+                    <div class="skeleton skeleton-line" style="width: 60%"></div>
+                  </div>
+                </div>
+
+                <!-- Empty State -->
+                <div *ngIf="!loadingBugs && bugs.length === 0" class="card-empty-state">
+                  <p class="empty-title">No issues yet</p>
+                  <p class="empty-subtitle">
+                    Status overview will appear here once issues are created.
+                  </p>
+                </div>
+
+                <!-- Loaded State (Donut Chart) -->
+                <div *ngIf="!loadingBugs && bugs.length > 0" class="donut-chart-container">
+                  <div class="donut-svg-wrap">
+                    <svg viewBox="0 0 160 160" width="140" height="140" class="donut-svg">
+                      <circle
+                        cx="80"
+                        cy="80"
+                        r="50"
+                        fill="transparent"
+                        stroke="var(--border)"
+                        stroke-width="18"
+                      ></circle>
+                      <circle
+                        *ngFor="let seg of statusDonutSegments"
+                        cx="80"
+                        cy="80"
+                        r="50"
+                        fill="transparent"
+                        [attr.stroke]="seg.color"
+                        stroke-width="18"
+                        [attr.stroke-dasharray]="seg.strokeDasharray"
+                        [attr.stroke-dashoffset]="seg.strokeDashoffset"
+                        stroke-linecap="butt"
+                        transform="rotate(-90 80 80)"
+                      ></circle>
+                      <text x="80" y="76" text-anchor="middle" class="donut-total-text">
+                        {{ bugs.length }}
+                      </text>
+                      <text x="80" y="93" text-anchor="middle" class="donut-sub-text">TOTAL</text>
+                    </svg>
+                  </div>
+                  <div class="donut-legend">
+                    <div *ngFor="let seg of statusDonutSegments" class="donut-legend-row">
+                      <span class="donut-legend-dot" [style.background-color]="seg.color"></span>
+                      <span class="donut-legend-name">{{ seg.label }}</span>
+                      <span class="donut-legend-count">{{ seg.count }}</span>
+                      <span class="donut-legend-pct">({{ seg.percent }}%)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Card 2: Recent activity -->
+            <section class="dashboard-card card">
+              <div class="card-heading">
+                <div>
+                  <h3>Recent activity</h3>
+                  <small>Timeline of changes and updates</small>
+                </div>
+              </div>
+              <div class="card-body">
+                <!-- Loading State (Skeleton) -->
+                <div *ngIf="loadingBugs" class="card-loading-skeleton">
+                  <div class="skeleton skeleton-line" style="width: 85%"></div>
+                  <div class="skeleton skeleton-line" style="width: 65%"></div>
+                  <div class="skeleton skeleton-line" style="width: 75%"></div>
+                  <div class="skeleton skeleton-line" style="width: 60%"></div>
+                </div>
+
+                <!-- Empty State -->
+                <div
+                  *ngIf="!loadingBugs && recentActivityList.length === 0"
+                  class="card-empty-state"
+                >
+                  <p class="empty-title">No recent activity</p>
+                  <p class="empty-subtitle">Issue updates and changes will be recorded here.</p>
+                </div>
+
+                <!-- Loaded State (Scrollable List) -->
+                <div
+                  *ngIf="!loadingBugs && recentActivityList.length > 0"
+                  class="activity-scroll-list"
+                >
+                  <div *ngFor="let item of recentActivityList" class="activity-list-item">
+                    <div class="activity-item-icon">
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="14"
+                        height="14"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                      </svg>
+                    </div>
+                    <div class="activity-item-content">
+                      <p class="activity-item-text">
+                        <strong>{{ item.actor }}</strong>
+                        <span class="activity-action"> {{ item.action }}</span>
+                        <span *ngIf="item.targetKey" class="activity-target-badge">{{
+                          item.targetKey
+                        }}</span>
+                      </p>
+                      <span class="activity-time-ago">{{ item.timeAgo }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Card 3: Priority breakdown -->
+            <section class="dashboard-card card">
+              <div class="card-heading">
+                <div>
+                  <h3>Priority breakdown</h3>
+                  <small>Highest to Lowest</small>
+                </div>
+              </div>
+              <div class="card-body">
+                <!-- Loading State (Skeleton) -->
+                <div *ngIf="loadingBugs" class="card-loading-skeleton">
+                  <div class="skeleton skeleton-line" style="width: 90%"></div>
+                  <div class="skeleton skeleton-line" style="width: 70%"></div>
+                  <div class="skeleton skeleton-line" style="width: 80%"></div>
+                  <div class="skeleton skeleton-line" style="width: 50%"></div>
+                </div>
+
+                <!-- Empty State -->
+                <div *ngIf="!loadingBugs && bugs.length === 0" class="card-empty-state">
+                  <p class="empty-title">No priority data</p>
+                  <p class="empty-subtitle">Defect priorities will appear here once logged.</p>
+                </div>
+
+                <!-- Loaded State -->
+                <div *ngIf="!loadingBugs && bugs.length > 0" class="breakdown-list">
+                  <div *ngFor="let p of priorityBreakdown" class="breakdown-row">
+                    <div class="breakdown-meta">
+                      <span class="breakdown-label">{{ p.label }}</span>
+                      <span class="breakdown-count"
+                        >{{ p.count }} <small>({{ p.percent }}%)</small></span
+                      >
+                    </div>
+                    <div class="breakdown-track">
+                      <div
+                        class="breakdown-fill"
+                        [style.width.%]="p.percent"
+                        [style.background-color]="p.color"
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Card 4: Types of work -->
+            <section class="dashboard-card card">
+              <div class="card-heading">
+                <div>
+                  <h3>Types of work</h3>
+                  <small>Share of defects by severity</small>
+                </div>
+              </div>
+              <div class="card-body">
+                <!-- Loading State (Skeleton) -->
+                <div *ngIf="loadingBugs" class="card-loading-skeleton">
+                  <div class="skeleton skeleton-line" style="width: 80%"></div>
+                  <div class="skeleton skeleton-line" style="width: 60%"></div>
+                  <div class="skeleton skeleton-line" style="width: 75%"></div>
+                </div>
+
+                <!-- Empty State -->
+                <div *ngIf="!loadingBugs && bugs.length === 0" class="card-empty-state">
+                  <p class="empty-title">No work types</p>
+                  <p class="empty-subtitle">
+                    Work categories will be mapped here as issues are created.
+                  </p>
+                </div>
+
+                <!-- Loaded State -->
+                <div *ngIf="!loadingBugs && bugs.length > 0" class="breakdown-list">
+                  <div *ngFor="let w of workTypesBreakdown" class="breakdown-row">
+                    <div class="breakdown-meta">
+                      <span class="breakdown-label">{{ w.label }}</span>
+                      <span class="breakdown-count"
+                        >{{ w.count }} <small>({{ w.percent }}%)</small></span
+                      >
+                    </div>
+                    <div class="breakdown-track">
+                      <div
+                        class="breakdown-fill"
+                        [style.width.%]="w.percent"
+                        [style.background-color]="w.color"
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Card 5: Team workload -->
+            <section class="dashboard-card card dashboard-card-span-2">
+              <div class="card-heading">
+                <div>
+                  <h3>Team workload</h3>
+                  <small>Share of open issues across assignees</small>
+                </div>
+              </div>
+              <div class="card-body">
+                <!-- Loading State (Skeleton) -->
+                <div *ngIf="loadingBugs" class="card-loading-skeleton">
+                  <div class="skeleton skeleton-line" style="width: 70%"></div>
+                  <div class="skeleton skeleton-line" style="width: 85%"></div>
+                  <div class="skeleton skeleton-line" style="width: 60%"></div>
+                </div>
+
+                <!-- Empty State -->
+                <div *ngIf="!loadingBugs && openBugsCount === 0" class="card-empty-state">
+                  <p class="empty-title">No active workload</p>
+                  <p class="empty-subtitle">All current issues are resolved or closed.</p>
+                </div>
+
+                <!-- Loaded State -->
+                <div
+                  *ngIf="!loadingBugs && openBugsCount > 0"
+                  class="breakdown-list team-workload-list"
+                >
+                  <div *ngFor="let member of teamWorkload" class="breakdown-row">
+                    <div class="breakdown-meta">
+                      <span class="breakdown-label">
+                        <strong>{{ member.assigneeName }}</strong>
+                      </span>
+                      <span class="breakdown-count"
+                        >{{ member.count }} open <small>({{ member.percent }}%)</small></span
+                      >
+                    </div>
+                    <div class="breakdown-track">
+                      <div
+                        class="breakdown-fill"
+                        [style.width.%]="member.percent"
+                        [style.background-color]="member.color"
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- Project Access / Members -->
           <section
-            *ngIf="mode === 'real' && selectedProject"
+            *ngIf="selectedProject"
             class="project-members card"
             aria-labelledby="project-members-heading"
           >
@@ -600,46 +976,6 @@
                 {{ addingMember ? 'Adding…' : 'Add member' }}
               </button>
             </form>
-          </section>
-
-          <!-- Recent Activity -->
-          <section class="activity-section card">
-            <div class="card-heading">
-              <h3>Recent activity</h3>
-              <span>Audit timeline</span>
-            </div>
-            <div *ngIf="historyLoading" class="content-state">Loading activity…</div>
-            <div *ngIf="historyError" class="activity-error form-error" role="alert">
-              <span>{{ historyError }}</span>
-              <button type="button" class="btn-secondary" (click)="retryHistory()">
-                Retry activity
-              </button>
-            </div>
-            <div
-              *ngIf="!historyLoading && !historyError && history.length === 0"
-              class="content-state"
-            >
-              No activity yet.
-            </div>
-            <ul *ngIf="!historyLoading && history.length > 0" class="timeline-list">
-              <li *ngFor="let event of history" class="timeline-item">
-                <div class="timeline-meta">
-                  <span class="timeline-type">{{ formatHistoryEventType(event.eventType) }}</span>
-                  <span class="timeline-author">{{ historyActorLabel(event) }}</span>
-                  <span class="timeline-time">{{ formatDate(event.createdAt) }}</span>
-                </div>
-                <p class="timeline-summary">{{ historyEventSummary(event) }}</p>
-                <a
-                  *ngIf="safeExternalUrl(event.newValue) as url"
-                  [href]="url"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="external-link"
-                >
-                  View linked resource →
-                </a>
-              </li>
-            </ul>
           </section>
         </section>
 
@@ -768,9 +1104,7 @@
                   <td class="bug-key">{{ bug.key }}</td>
                   <td class="bug-title-col">
                     <strong>{{ bug.title }}</strong>
-                    <small>{{
-                      mode === 'demo' ? 'Illustrative record' : 'Reporter ID ' + bug.reporterId
-                    }}</small>
+                    <small>Reporter ID {{ bug.reporterId }}</small>
                   </td>
                   <td>
                     <span class="status-indicator">
@@ -794,11 +1128,7 @@
             </table>
 
             <!-- Pagination -->
-            <nav
-              *ngIf="mode === 'real' && selectedProject"
-              class="issue-pagination"
-              aria-label="Issue pages"
-            >
+            <nav *ngIf="selectedProject" class="issue-pagination" aria-label="Issue pages">
               <button
                 type="button"
                 class="btn-secondary"
@@ -875,11 +1205,7 @@
                   </ul>
 
                   <!-- Add Comment Form -->
-                  <form
-                    *ngIf="mode === 'real' && selectedProject"
-                    class="comment-form"
-                    (ngSubmit)="addComment()"
-                  >
+                  <form *ngIf="selectedProject" class="comment-form" (ngSubmit)="addComment()">
                     <textarea
                       placeholder="Add a comment…"
                       rows="3"
@@ -1063,6 +1389,16 @@
                     </div>
 
                     <div class="field">
+                      <label for="detail-due-date">Due date</label>
+                      <input
+                        id="detail-due-date"
+                        type="date"
+                        [(ngModel)]="detailDueDate"
+                        [ngModelOptions]="{ standalone: true }"
+                      />
+                    </div>
+
+                    <div class="field">
                       <label for="edit-severity">Severity</label>
                       <select
                         id="edit-severity"
@@ -1110,214 +1446,214 @@
             </div>
           </div>
         </section>
-
-        <!-- VIEW 3: ADMIN CONTROLS (Users table & Bind GitHub repository in 2 cards) -->
-        <section
-          *ngIf="isAppAdmin"
-          id="admin-controls"
-          class="view-section admin-controls"
-          [class.view-hidden]="activeNav !== 'admin'"
-          aria-labelledby="admin-controls-heading"
-        >
-          <div *ngIf="adminUsersError" class="activity-error form-error" role="alert">
-            <span>{{ adminUsersError }}</span>
-            <button type="button" class="btn-secondary" (click)="retryAdminUsers()">
-              Retry users
-            </button>
-          </div>
-
-          <div class="view-header">
-            <div>
-              <p class="workspace-eyebrow">Application administration</p>
-              <h2 id="admin-controls-heading">Admin controls</h2>
-            </div>
-          </div>
-
-          <div class="admin-grid">
-            <!-- Card 1: Users Table -->
-            <section class="admin-card card" aria-labelledby="admin-users-heading">
-              <div class="card-heading">
-                <div>
-                  <h3 id="admin-users-heading">Users</h3>
-                  <small>Manage accounts and system authority</small>
-                </div>
-                <button type="button" class="btn-primary" (click)="openCreateUser()">
-                  + Create user
-                </button>
-              </div>
-
-              <p *ngIf="adminUsersLoading" class="activity-state" role="status">Loading users…</p>
-              <p *ngIf="adminUsersLoaded && adminUsers.length === 0" class="activity-state">
-                No users were returned.
-              </p>
-
-              <ul *ngIf="adminUsersLoaded && adminUsers.length > 0" class="admin-user-list">
-                <li *ngFor="let user of adminUsers" class="admin-user-item">
-                  <div class="admin-user-details">
-                    <strong>{{ user.displayName }}</strong>
-                    <span>{{ user.email }}</span>
-                    <small>User ID {{ user.id }} · Global role: {{ user.role }}</small>
-                  </div>
-                  <div class="admin-user-controls">
-                    <select
-                      [id]="'admin-role-' + user.id"
-                      [(ngModel)]="adminUserEdits[user.id].role"
-                      [ngModelOptions]="{ standalone: true }"
-                      aria-label="Update role"
-                    >
-                      <option *ngIf="!adminUserEdits[user.id].role" [ngValue]="''" disabled>
-                        Unsupported role
-                      </option>
-                      <option *ngFor="let role of globalRoles" [ngValue]="role">{{ role }}</option>
-                    </select>
-                    <button
-                      type="button"
-                      class="btn-secondary"
-                      (click)="updateAdminUser(user)"
-                      [disabled]="adminUserUpdates[user.id]?.loading"
-                    >
-                      {{ adminUserUpdates[user.id]?.loading ? 'Saving…' : 'Save role' }}
-                    </button>
-                    <p *ngIf="adminUserUpdates[user.id]?.error" class="form-error" role="alert">
-                      {{ adminUserUpdates[user.id].error }}
-                    </p>
-                  </div>
-                </li>
-              </ul>
-            </section>
-
-            <!-- Card 2: Bind GitHub Repository -->
-            <section class="admin-card card" aria-labelledby="github-binding-heading">
-              <div class="card-heading">
-                <div>
-                  <h3 id="github-binding-heading">Bind GitHub repository</h3>
-                  <small>Link issue tracking to GitHub webhooks</small>
-                </div>
-              </div>
-
-              <form
-                class="detail-edit"
-                [formGroup]="bindGitHubForm"
-                (ngSubmit)="bindGitHubRepository()"
-                novalidate
-              >
-                <div class="field">
-                  <label for="github-project-id">Project ID</label>
-                  <input
-                    id="github-project-id"
-                    type="number"
-                    min="1"
-                    step="1"
-                    formControlName="projectId"
-                    placeholder="1"
-                  />
-                  <span
-                    *ngIf="
-                      bindGitHubForm.controls.projectId.touched &&
-                      bindGitHubForm.controls.projectId.invalid
-                    "
-                    class="field-error"
-                  >
-                    Enter a positive project ID.
-                  </span>
-                </div>
-
-                <div class="field">
-                  <label for="github-installation-id">Installation ID</label>
-                  <input
-                    id="github-installation-id"
-                    type="number"
-                    min="1"
-                    step="1"
-                    formControlName="installationId"
-                    placeholder="10001"
-                  />
-                  <span
-                    *ngIf="
-                      bindGitHubForm.controls.installationId.touched &&
-                      bindGitHubForm.controls.installationId.invalid
-                    "
-                    class="field-error"
-                  >
-                    Enter a positive installation ID.
-                  </span>
-                </div>
-
-                <div class="field">
-                  <label for="github-repository-id">Repository ID</label>
-                  <input
-                    id="github-repository-id"
-                    type="number"
-                    min="1"
-                    step="1"
-                    formControlName="repositoryId"
-                    placeholder="20002"
-                  />
-                  <span
-                    *ngIf="
-                      bindGitHubForm.controls.repositoryId.touched &&
-                      bindGitHubForm.controls.repositoryId.invalid
-                    "
-                    class="field-error"
-                  >
-                    Enter a positive repository ID.
-                  </span>
-                </div>
-
-                <div class="field">
-                  <label for="github-owner">Owner</label>
-                  <input
-                    id="github-owner"
-                    formControlName="owner"
-                    maxlength="100"
-                    placeholder="e.g. acme"
-                  />
-                  <span
-                    *ngIf="
-                      bindGitHubForm.controls.owner.touched && bindGitHubForm.controls.owner.invalid
-                    "
-                    class="field-error"
-                  >
-                    Enter an owner name (100 characters max).
-                  </span>
-                </div>
-
-                <div class="field">
-                  <label for="github-repository-name">Repository name</label>
-                  <input
-                    id="github-repository-name"
-                    formControlName="repositoryName"
-                    maxlength="100"
-                    placeholder="e.g. core-engine"
-                  />
-                  <span
-                    *ngIf="
-                      bindGitHubForm.controls.repositoryName.touched &&
-                      bindGitHubForm.controls.repositoryName.invalid
-                    "
-                    class="field-error"
-                  >
-                    Enter a repository name (100 characters max).
-                  </span>
-                </div>
-
-                <p *ngIf="bindGitHubError" class="activity-error form-error" role="alert">
-                  <span>{{ bindGitHubError }}</span>
-                  <button type="button" class="btn-secondary" (click)="retryGitHubBinding()">
-                    Retry binding
-                  </button>
-                </p>
-                <p *ngIf="githubBindingResult as binding" class="member-success" role="status">
-                  Bound {{ binding.fullName }} to project {{ binding.projectId }}.
-                </p>
-                <button type="submit" class="btn-primary" [disabled]="bindingGitHubRepository">
-                  {{ bindingGitHubRepository ? 'Binding…' : 'Bind repository' }}
-                </button>
-              </form>
-            </section>
-          </div>
-        </section>
       </div>
+
+      <!-- VIEW 3: ADMIN CONTROLS (Users table & Bind GitHub repository in 2 cards) -->
+      <section
+        *ngIf="isAppAdmin"
+        id="admin-controls"
+        class="view-section admin-controls"
+        [class.view-hidden]="activeNav !== 'admin'"
+        aria-labelledby="admin-controls-heading"
+      >
+        <div *ngIf="adminUsersError" class="activity-error form-error" role="alert">
+          <span>{{ adminUsersError }}</span>
+          <button type="button" class="btn-secondary" (click)="retryAdminUsers()">
+            Retry users
+          </button>
+        </div>
+
+        <div class="view-header">
+          <div>
+            <p class="workspace-eyebrow">Application administration</p>
+            <h2 id="admin-controls-heading">Admin controls</h2>
+          </div>
+        </div>
+
+        <div class="admin-grid">
+          <!-- Card 1: Users Table -->
+          <section class="admin-card card" aria-labelledby="admin-users-heading">
+            <div class="card-heading">
+              <div>
+                <h3 id="admin-users-heading">Users</h3>
+                <small>Manage accounts and system authority</small>
+              </div>
+              <button type="button" class="btn-primary" (click)="openCreateUser()">
+                + Create user
+              </button>
+            </div>
+
+            <p *ngIf="adminUsersLoading" class="activity-state" role="status">Loading users…</p>
+            <p *ngIf="adminUsersLoaded && adminUsers.length === 0" class="activity-state">
+              No users were returned.
+            </p>
+
+            <ul *ngIf="adminUsersLoaded && adminUsers.length > 0" class="admin-user-list">
+              <li *ngFor="let user of adminUsers" class="admin-user-item">
+                <div class="admin-user-details">
+                  <strong>{{ user.displayName }}</strong>
+                  <span>{{ user.email }}</span>
+                  <small>User ID {{ user.id }} · Global role: {{ user.role }}</small>
+                </div>
+                <div class="admin-user-controls">
+                  <select
+                    [id]="'admin-role-' + user.id"
+                    [(ngModel)]="adminUserEdits[user.id].role"
+                    [ngModelOptions]="{ standalone: true }"
+                    aria-label="Update role"
+                  >
+                    <option *ngIf="!adminUserEdits[user.id].role" [ngValue]="''" disabled>
+                      Unsupported role
+                    </option>
+                    <option *ngFor="let role of globalRoles" [ngValue]="role">{{ role }}</option>
+                  </select>
+                  <button
+                    type="button"
+                    class="btn-secondary"
+                    (click)="updateAdminUser(user)"
+                    [disabled]="adminUserUpdates[user.id]?.loading"
+                  >
+                    {{ adminUserUpdates[user.id]?.loading ? 'Saving…' : 'Save role' }}
+                  </button>
+                  <p *ngIf="adminUserUpdates[user.id]?.error" class="form-error" role="alert">
+                    {{ adminUserUpdates[user.id].error }}
+                  </p>
+                </div>
+              </li>
+            </ul>
+          </section>
+
+          <!-- Card 2: Bind GitHub Repository -->
+          <section class="admin-card card" aria-labelledby="github-binding-heading">
+            <div class="card-heading">
+              <div>
+                <h3 id="github-binding-heading">Bind GitHub repository</h3>
+                <small>Link issue tracking to GitHub webhooks</small>
+              </div>
+            </div>
+
+            <form
+              class="detail-edit"
+              [formGroup]="bindGitHubForm"
+              (ngSubmit)="bindGitHubRepository()"
+              novalidate
+            >
+              <div class="field">
+                <label for="github-project-id">Project ID</label>
+                <input
+                  id="github-project-id"
+                  type="number"
+                  min="1"
+                  step="1"
+                  formControlName="projectId"
+                  placeholder="1"
+                />
+                <span
+                  *ngIf="
+                    bindGitHubForm.controls.projectId.touched &&
+                    bindGitHubForm.controls.projectId.invalid
+                  "
+                  class="field-error"
+                >
+                  Enter a positive project ID.
+                </span>
+              </div>
+
+              <div class="field">
+                <label for="github-installation-id">Installation ID</label>
+                <input
+                  id="github-installation-id"
+                  type="number"
+                  min="1"
+                  step="1"
+                  formControlName="installationId"
+                  placeholder="10001"
+                />
+                <span
+                  *ngIf="
+                    bindGitHubForm.controls.installationId.touched &&
+                    bindGitHubForm.controls.installationId.invalid
+                  "
+                  class="field-error"
+                >
+                  Enter a positive installation ID.
+                </span>
+              </div>
+
+              <div class="field">
+                <label for="github-repository-id">Repository ID</label>
+                <input
+                  id="github-repository-id"
+                  type="number"
+                  min="1"
+                  step="1"
+                  formControlName="repositoryId"
+                  placeholder="20002"
+                />
+                <span
+                  *ngIf="
+                    bindGitHubForm.controls.repositoryId.touched &&
+                    bindGitHubForm.controls.repositoryId.invalid
+                  "
+                  class="field-error"
+                >
+                  Enter a positive repository ID.
+                </span>
+              </div>
+
+              <div class="field">
+                <label for="github-owner">Owner</label>
+                <input
+                  id="github-owner"
+                  formControlName="owner"
+                  maxlength="100"
+                  placeholder="e.g. acme"
+                />
+                <span
+                  *ngIf="
+                    bindGitHubForm.controls.owner.touched && bindGitHubForm.controls.owner.invalid
+                  "
+                  class="field-error"
+                >
+                  Enter an owner name (100 characters max).
+                </span>
+              </div>
+
+              <div class="field">
+                <label for="github-repository-name">Repository name</label>
+                <input
+                  id="github-repository-name"
+                  formControlName="repositoryName"
+                  maxlength="100"
+                  placeholder="e.g. core-engine"
+                />
+                <span
+                  *ngIf="
+                    bindGitHubForm.controls.repositoryName.touched &&
+                    bindGitHubForm.controls.repositoryName.invalid
+                  "
+                  class="field-error"
+                >
+                  Enter a repository name (100 characters max).
+                </span>
+              </div>
+
+              <p *ngIf="bindGitHubError" class="activity-error form-error" role="alert">
+                <span>{{ bindGitHubError }}</span>
+                <button type="button" class="btn-secondary" (click)="retryGitHubBinding()">
+                  Retry binding
+                </button>
+              </p>
+              <p *ngIf="githubBindingResult as binding" class="member-success" role="status">
+                Bound {{ binding.fullName }} to project {{ binding.projectId }}.
+              </p>
+              <button type="submit" class="btn-primary" [disabled]="bindingGitHubRepository">
+                {{ bindingGitHubRepository ? 'Binding…' : 'Bind repository' }}
+              </button>
+            </form>
+          </section>
+        </div>
+      </section>
     </main>
   </div>
 </div>

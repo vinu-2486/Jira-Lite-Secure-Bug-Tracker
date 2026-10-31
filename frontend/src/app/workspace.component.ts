@@ -43,7 +43,7 @@ import {
 })
 export class WorkspaceComponent implements OnInit {
   @ViewChild('referenceCloseButton') referenceCloseButton?: ElementRef<HTMLButtonElement>;
-  mode: 'demo' | 'real' = 'demo';
+  mode: 'demo' | 'real' = 'real';
   projects: Project[] = [];
   bugs: Bug[] = [];
   selectedProject: Project | null = null;
@@ -51,6 +51,10 @@ export class WorkspaceComponent implements OnInit {
   selectedDetail: BugDetail | null = null;
   comments: BugComment[] = [];
   history: HistoryEvent[] = [];
+  createDueDate = '';
+  detailDueDate = '';
+  stagedAttachments: File[] = [];
+  isDraggingOver = false;
   commentsLoading = false;
   commentsError = '';
   historyLoading = false;
@@ -264,13 +268,13 @@ export class WorkspaceComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.selectedBug = this.demoBugs[0];
+    this.selectedBug = null;
     this.loadProjects();
     if (this.isAppAdmin) this.loadAdminUsers();
   }
 
   get displayedBugs(): Bug[] {
-    return this.mode === 'demo' ? this.demoBugs : this.bugs;
+    return this.bugs;
   }
 
   get isAppAdmin(): boolean {
@@ -338,23 +342,271 @@ export class WorkspaceComponent implements OnInit {
     return this.totalCount ? Math.round((this.countByStatus(status) / this.totalCount) * 100) : 0;
   }
 
+  get shouldShowUserDisplayName(): boolean {
+    const name = this.currentUser?.displayName?.trim().toLowerCase();
+    return Boolean(
+      name &&
+      name !== 'administrator' &&
+      name !== 'admin' &&
+      name !== 'app_admin' &&
+      name !== 'user',
+    );
+  }
+
+  get resolvedThisWeekCount(): number {
+    const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    return this.bugs.filter(
+      (b) =>
+        (b.status === 'RESOLVED' || b.status === 'CLOSED') &&
+        new Date(b.updatedAt).getTime() >= oneWeekAgo,
+    ).length;
+  }
+
+  get updatedThisWeekCount(): number {
+    const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    return this.bugs.filter((b) => new Date(b.updatedAt).getTime() >= oneWeekAgo).length;
+  }
+
+  get createdThisWeekCount(): number {
+    const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    return this.bugs.filter((b) => new Date(b.createdAt).getTime() >= oneWeekAgo).length;
+  }
+
+  get dueSoonCount(): number {
+    return 0;
+  }
+
+  get openBugs(): Bug[] {
+    return this.bugs.filter((b) => b.status !== 'RESOLVED' && b.status !== 'CLOSED');
+  }
+
+  get openBugsCount(): number {
+    return this.openBugs.length;
+  }
+
+  get statusDonutSegments(): Array<{
+    status: BugStatus;
+    label: string;
+    count: number;
+    percent: number;
+    color: string;
+    strokeDasharray: string;
+    strokeDashoffset: number;
+  }> {
+    const total = this.bugs.length;
+    if (total === 0) return [];
+    const circumference = 2 * Math.PI * 50;
+    const statusMeta: Record<BugStatus, { label: string; color: string }> = {
+      OPEN: { label: 'Open', color: '#38bdf8' },
+      IN_PROGRESS: { label: 'In progress', color: '#6366f1' },
+      RESOLVED: { label: 'Resolved', color: '#10b981' },
+      CLOSED: { label: 'Closed', color: '#94a3b8' },
+      REOPENED: { label: 'Reopened', color: '#f59e0b' },
+    };
+
+    let cumulative = 0;
+    return this.statuses.map((status) => {
+      const count = this.bugs.filter((b) => b.status === status).length;
+      const percent = total > 0 ? Math.round((count / total) * 100) : 0;
+      const dash = total > 0 ? (count / total) * circumference : 0;
+      const offset = -cumulative;
+      cumulative += dash;
+      return {
+        status,
+        label: statusMeta[status]?.label ?? this.formatStatus(status),
+        count,
+        percent,
+        color: statusMeta[status]?.color ?? '#6b7280',
+        strokeDasharray: `${dash.toFixed(2)} ${circumference.toFixed(2)}`,
+        strokeDashoffset: parseFloat(offset.toFixed(2)),
+      };
+    });
+  }
+
+  get priorityBreakdown(): Array<{
+    priority: string;
+    label: string;
+    count: number;
+    percent: number;
+    color: string;
+  }> {
+    const total = this.bugs.length;
+    const config = [
+      { priority: 'CRITICAL', label: 'Highest', color: '#f43f5e' },
+      { priority: 'HIGH', label: 'High', color: '#fb923c' },
+      { priority: 'MEDIUM', label: 'Medium', color: '#38bdf8' },
+      { priority: 'LOW', label: 'Low', color: '#10b981' },
+      { priority: 'NONE', label: 'None', color: '#cbd5e1' },
+    ];
+    return config.map((c) => {
+      const count =
+        c.priority === 'NONE' ? 0 : this.bugs.filter((b) => b.priority === c.priority).length;
+      const percent = total > 0 ? Math.round((count / total) * 100) : 0;
+      return {
+        priority: c.priority,
+        label: c.label,
+        count,
+        percent,
+        color: c.color,
+      };
+    });
+  }
+
+  get workTypesBreakdown(): Array<{
+    type: string;
+    label: string;
+    count: number;
+    percent: number;
+    color: string;
+  }> {
+    const total = this.bugs.length;
+    const config = [
+      { type: 'CRITICAL', label: 'Critical Defect', color: '#f43f5e' },
+      { type: 'MAJOR', label: 'Major Defect', color: '#6366f1' },
+      { type: 'MINOR', label: 'Minor Defect', color: '#0ea5e9' },
+      { type: 'TRIVIAL', label: 'Trivial Defect', color: '#10b981' },
+    ];
+    return config.map((c) => {
+      const count = this.bugs.filter((b) => b.severity === c.type).length;
+      const percent = total > 0 ? Math.round((count / total) * 100) : 0;
+      return {
+        type: c.type,
+        label: c.label,
+        count,
+        percent,
+        color: c.color,
+      };
+    });
+  }
+
+  get teamWorkload(): Array<{
+    assigneeName: string;
+    count: number;
+    percent: number;
+    color: string;
+  }> {
+    const openTotal = this.openBugsCount;
+    if (openTotal === 0) return [];
+    const colors = ['#38bdf8', '#10b981', '#6366f1', '#14b8a6', '#0284c7', '#059669', '#94a3b8'];
+
+    const countsByAssignee = new Map<number | null, number>();
+    for (const bug of this.openBugs) {
+      const key = bug.assigneeId;
+      countsByAssignee.set(key, (countsByAssignee.get(key) ?? 0) + 1);
+    }
+
+    const memberMap = new Map<number, string>();
+    for (const member of this.projectMembers) {
+      memberMap.set(member.userId, member.displayName);
+    }
+
+    const result: Array<{ assigneeName: string; count: number; percent: number; color: string }> =
+      [];
+    let colorIdx = 0;
+
+    countsByAssignee.forEach((count, assigneeId) => {
+      let name = 'Unassigned';
+      if (assigneeId !== null) {
+        name = memberMap.get(assigneeId) ?? `User ID ${assigneeId}`;
+      }
+      const percent = Math.round((count / openTotal) * 100);
+      result.push({
+        assigneeName: name,
+        count,
+        percent,
+        color: colors[colorIdx % colors.length],
+      });
+      colorIdx++;
+    });
+
+    return result.sort((a, b) => b.count - a.count);
+  }
+
+  get recentActivityList(): Array<{
+    actor: string;
+    action: string;
+    targetKey: string;
+    timeAgo: string;
+  }> {
+    if (this.history.length > 0) {
+      return this.history.slice(0, 15).map((evt) => ({
+        actor: this.historyActorLabel(evt),
+        action: this.historyEventSummary(evt),
+        targetKey: this.selectedBug ? this.selectedBug.key : '',
+        timeAgo: this.timeAgo(evt.createdAt),
+      }));
+    }
+    return [...this.bugs]
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .slice(0, 15)
+      .map((b) => ({
+        actor: b.assigneeId
+          ? `User ID ${b.assigneeId}`
+          : b.reporterId
+            ? `User ID ${b.reporterId}`
+            : 'Project member',
+        action: `Updated status to ${this.formatStatus(b.status)}: "${b.title}"`,
+        targetKey: b.key,
+        timeAgo: this.timeAgo(b.updatedAt),
+      }));
+  }
+
+  timeAgo(dateStr: string | null | undefined): string {
+    if (!dateStr) return 'recently';
+    const time = new Date(dateStr).getTime();
+    if (isNaN(time)) return 'recently';
+    const diffMs = Date.now() - time;
+    const diffSecs = Math.max(0, Math.floor(diffMs / 1000));
+    if (diffSecs < 60) return 'just now';
+    const diffMins = Math.floor(diffSecs / 60);
+    if (diffMins < 60) return `${diffMins} ${diffMins === 1 ? 'minute' : 'minutes'} ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours} ${diffHours === 1 ? 'hour' : 'hours'} ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 7) return `${diffDays} ${diffDays === 1 ? 'day' : 'days'} ago`;
+    const diffWeeks = Math.floor(diffDays / 7);
+    return `${diffWeeks} ${diffWeeks === 1 ? 'week' : 'weeks'} ago`;
+  }
+
+  onDragOver(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.isDraggingOver = true;
+  }
+
+  onDragLeave(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.isDraggingOver = false;
+  }
+
+  onFileDrop(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.isDraggingOver = false;
+    if (event.dataTransfer?.files?.length) {
+      for (let i = 0; i < event.dataTransfer.files.length; i++) {
+        this.stagedAttachments.push(event.dataTransfer.files[i]);
+      }
+    }
+  }
+
+  onFilesPicked(event: Event): void {
+    const target = event.target as HTMLInputElement;
+    if (target?.files?.length) {
+      for (let i = 0; i < target.files.length; i++) {
+        this.stagedAttachments.push(target.files[i]);
+      }
+      target.value = '';
+    }
+  }
+
+  removeStagedFile(index: number): void {
+    this.stagedAttachments.splice(index, 1);
+  }
+
   switchToDemo(): void {
-    this.resetIssueDetailState();
-    this.projectSelectionId++;
-    this.bugsRequestId++;
-    this.bugsLoadSubscription?.unsubscribe();
-    this.mode = 'demo';
-    this.selectedProject = null;
-    this.selectedBug = this.demoBugs[0];
-    this.bugsError = '';
-    this.bugs = [];
-    this.loadingBugs = false;
-    this.hasNextPage = false;
-    this.noMoreIssues = false;
-    this.failedBugPage = null;
-    this.creating = false;
-    this.resetProjectMemberState();
-    this.resetFilters();
+    this.switchToReal();
   }
 
   switchToReal(): void {
@@ -857,7 +1109,6 @@ export class WorkspaceComponent implements OnInit {
   }
 
   submitBug(): void {
-    if (this.mode === 'demo') return;
     this.createForm.markAllAsTouched();
     if (this.createForm.invalid || !this.selectedProject || this.creating) return;
     const formValue = this.createForm.getRawValue();
@@ -890,6 +1141,8 @@ export class WorkspaceComponent implements OnInit {
           priority: 'MEDIUM',
           severity: 'MAJOR',
         });
+        this.createDueDate = '';
+        this.stagedAttachments = [];
         this.showCreateForm = false;
         this.creating = false;
         this.refreshCurrentBugPage();
@@ -1058,6 +1311,8 @@ export class WorkspaceComponent implements OnInit {
   closeCreateIssue(): void {
     this.showCreateForm = false;
     this.createError = '';
+    this.createDueDate = '';
+    this.stagedAttachments = [];
   }
 
   openCreateProject(): void {
@@ -1141,6 +1396,9 @@ export class WorkspaceComponent implements OnInit {
       next: (projects) => {
         this.projects = projects;
         this.loadingProjects = false;
+        if (projects.length > 0 && !this.selectedProject) {
+          this.selectProject(projects[0]);
+        }
         this.loadQueuedProjectRefresh();
       },
       error: (error) => {
