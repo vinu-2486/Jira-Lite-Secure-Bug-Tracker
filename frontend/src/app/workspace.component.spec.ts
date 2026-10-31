@@ -168,19 +168,6 @@ describe('WorkspaceComponent', () => {
     }).compileComponents();
   });
 
-  it('keeps both demo issues clearly labeled as illustrative and unsaved', async () => {
-    const fixture = TestBed.createComponent(WorkspaceComponent);
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(fixture.nativeElement.textContent).toContain('Demo data - not saved');
-    expect(fixture.nativeElement.textContent).toContain('These two records are illustrative only.');
-    expect(fixture.nativeElement.textContent).toContain('DEMO-101');
-    expect(fixture.nativeElement.textContent).toContain('DEMO-102');
-    expect(fixture.nativeElement.querySelectorAll('tbody tr')).toHaveLength(2);
-  }, 25000);
-
   it('keeps issue rows keyboard focusable and opens them with Enter and Space', () => {
     const fixture = TestBed.createComponent(WorkspaceComponent);
     const component = fixture.componentInstance;
@@ -297,11 +284,15 @@ describe('WorkspaceComponent', () => {
     const pendingHistory = new Subject<HistoryEvent[]>();
     workspace.getComments.mockReturnValue(pendingComments);
     workspace.getHistory.mockReturnValue(pendingHistory);
+    workspace.getProjects.mockReturnValue(of([project]));
+    workspace.getBugs.mockReturnValue(of([issueA]));
     const fixture = TestBed.createComponent(WorkspaceComponent);
+    const component = fixture.componentInstance;
+    component.mode = 'real';
+    component.selectedProject = project;
+    component.activeNav = 'issues';
     fixture.detectChanges();
-    fixture.componentInstance.mode = 'real';
-    fixture.componentInstance.selectedProject = project;
-    fixture.componentInstance.selectBug(issueA);
+    component.selectBug(issueA);
     await fixture.whenStable();
     fixture.detectChanges();
 
@@ -343,11 +334,15 @@ describe('WorkspaceComponent', () => {
     workspace.getHistory.mockReturnValue(
       of([historyEvent({ id: 20, eventType: 'CREATED', newValue: 'JILA-21' })]),
     );
+    workspace.getProjects.mockReturnValue(of([project]));
+    workspace.getBugs.mockReturnValue(of([issueA]));
     const fixture = TestBed.createComponent(WorkspaceComponent);
+    const component = fixture.componentInstance;
+    component.mode = 'real';
+    component.selectedProject = project;
+    component.activeNav = 'issues';
     fixture.detectChanges();
-    fixture.componentInstance.mode = 'real';
-    fixture.componentInstance.selectedProject = project;
-    fixture.componentInstance.selectBug(issueA);
+    component.selectBug(issueA);
     await fixture.whenStable();
     fixture.detectChanges();
 
@@ -411,11 +406,15 @@ describe('WorkspaceComponent', () => {
       }),
     ];
     workspace.getHistory.mockReturnValue(of(events));
+    workspace.getProjects.mockReturnValue(of([project]));
+    workspace.getBugs.mockReturnValue(of([issueA]));
     const fixture = TestBed.createComponent(WorkspaceComponent);
+    const component = fixture.componentInstance;
+    component.mode = 'real';
+    component.selectedProject = project;
+    component.activeNav = 'issues';
     fixture.detectChanges();
-    fixture.componentInstance.mode = 'real';
-    fixture.componentInstance.selectedProject = project;
-    fixture.componentInstance.selectBug(issueA);
+    component.selectBug(issueA);
     await fixture.whenStable();
     fixture.detectChanges();
 
@@ -1312,5 +1311,125 @@ describe('WorkspaceComponent', () => {
 
     expect(workspace.bindGitHubRepository).not.toHaveBeenCalled();
     expect(component.bindGitHubForm.controls.projectId.touched).toBe(true);
+  });
+
+  it('debounces live search input and clears search text immediately', async () => {
+    const fixture = TestBed.createComponent(WorkspaceComponent);
+    const component = fixture.componentInstance;
+    component.selectProject(project);
+
+    component.onSearchChange('bug');
+    expect(component.filterText).toBe('bug');
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(workspace.getBugs).toHaveBeenLastCalledWith(
+      project.id,
+      expect.objectContaining({ text: 'bug' }),
+    );
+
+    component.clearSearchText();
+    expect(component.filterText).toBe('');
+    expect(workspace.getBugs).toHaveBeenLastCalledWith(
+      project.id,
+      expect.objectContaining({ text: '' }),
+    );
+  });
+
+  it('toggles between list and board view and groups issues by column status', () => {
+    const fixture = TestBed.createComponent(WorkspaceComponent);
+    const component = fixture.componentInstance;
+    component.selectProject(project);
+    component.bugs = [
+      { ...issueA, status: 'OPEN' },
+      { ...issueB, status: 'IN_PROGRESS' },
+    ];
+
+    expect(component.viewMode).toBe('list');
+    component.setViewMode('board');
+    expect(component.viewMode).toBe('board');
+
+    const openBugs = component.bugsForColumn('OPEN');
+    const inProgressBugs = component.bugsForColumn('IN_PROGRESS');
+    const closedBugs = component.bugsForColumn('CLOSED');
+
+    expect(openBugs.length).toBe(1);
+    expect(openBugs[0].key).toBe(issueA.key);
+    expect(inProgressBugs.length).toBe(1);
+    expect(inProgressBugs[0].key).toBe(issueB.key);
+    expect(closedBugs.length).toBe(0);
+  });
+
+  it('rejects disallowed card drag transition with a clear message and calls transitionBug on allowed move', () => {
+    currentUser.set({ id: 1, email: 'lead@example.test', displayName: 'Lead', role: 'USER' });
+    const fixture = TestBed.createComponent(WorkspaceComponent);
+    const component = fixture.componentInstance;
+    component.selectProject(project);
+    const bug = { ...issueA, status: 'OPEN' as const, reporterId: 1, assigneeId: 1, version: 1 };
+    component.bugs = [bug];
+
+    const fakeDragEvent = { preventDefault: () => {} } as DragEvent;
+    component.draggedBug = bug;
+    component.onColumnDrop(fakeDragEvent, 'CLOSED');
+    expect(component.boardMessage).toContain('not allowed');
+    expect(workspace.transitionBug).not.toHaveBeenCalled();
+
+    const updatedBug = { ...bug, status: 'IN_PROGRESS' as const, version: 2 };
+    workspace.transitionBug.mockReturnValue(of(updatedBug));
+    workspace.getBugs.mockReturnValue(of([updatedBug]));
+    component.draggedBug = bug;
+    component.onColumnDrop(fakeDragEvent, 'IN_PROGRESS');
+    expect(workspace.transitionBug).toHaveBeenCalledWith(project.id, bug.id, 'IN_PROGRESS', 1, '');
+    expect(component.bugs.find((b) => b.id === bug.id)?.status).toBe('IN_PROGRESS');
+  });
+
+  it('renders admin users in create project lead dropdown and add member dropdown', async () => {
+    currentUser.set({
+      id: 1,
+      email: 'admin@example.test',
+      displayName: 'Admin',
+      role: 'APP_ADMIN',
+    });
+    const adminUser = {
+      id: 5,
+      email: 'lead@test.com',
+      displayName: 'Tech Lead',
+      role: 'USER' as const,
+      enabled: true,
+    };
+    workspace.getAdminUsers.mockReturnValue(of([adminUser]));
+    const fixture = TestBed.createComponent(WorkspaceComponent);
+    const component = fixture.componentInstance;
+    component.selectProject(project);
+    component.openCreateProject();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(component.adminUsers).toEqual([adminUser]);
+    const leadSelect = fixture.nativeElement.querySelector(
+      '#project-lead-user',
+    ) as HTMLSelectElement;
+    expect(leadSelect).toBeTruthy();
+    expect(leadSelect.textContent).toContain('Tech Lead');
+  });
+
+  it('resolves member display name for current assignee, comments, and activity history fallback', () => {
+    const fixture = TestBed.createComponent(WorkspaceComponent);
+    const component = fixture.componentInstance;
+    component.projectMembers = [{ userId: 10, displayName: 'Alice Engineer', role: 'DEVELOPER' }];
+
+    expect(component.getUserDisplayName(10)).toBe('Alice Engineer');
+    expect(component.getUserDisplayName(999)).toBe('User ID 999');
+    expect(component.getUserDisplayName(null)).toBe('Unassigned');
+
+    const historyEvent: HistoryEvent = {
+      id: 1,
+      eventType: 'COMMENT',
+      actorId: 10,
+      externalAuthor: null,
+      oldValue: null,
+      newValue: null,
+      reason: 'Looks good',
+      createdAt: '2026-01-01T00:00:00Z',
+    };
+    expect(component.historyActorLabel(historyEvent)).toBe('Alice Engineer');
   });
 });

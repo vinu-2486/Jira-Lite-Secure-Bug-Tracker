@@ -90,22 +90,20 @@
             >
           </div>
           <div class="field">
-            <label for="project-lead-user">Lead user ID</label>
-            <input
-              id="project-lead-user"
-              type="number"
-              min="1"
-              step="1"
-              formControlName="leadUserId"
-              placeholder="1"
-            />
+            <label for="project-lead-user">Lead user</label>
+            <select id="project-lead-user" formControlName="leadUserId">
+              <option [ngValue]="null" disabled>Select project lead…</option>
+              <option *ngFor="let user of adminUsers" [ngValue]="user.id">
+                {{ user.displayName }} (ID: {{ user.id }})
+              </option>
+            </select>
             <span
               *ngIf="
                 createProjectForm.controls.leadUserId.touched &&
                 createProjectForm.controls.leadUserId.invalid
               "
               class="field-error"
-              >Enter a lead user ID.</span
+              >Select a lead user.</span
             >
           </div>
         </div>
@@ -949,16 +947,27 @@
             >
               <h4>Add project member</h4>
               <div class="create-grid">
-                <div class="field">
-                  <label for="member-user-id">User ID</label>
-                  <input
-                    id="member-user-id"
-                    type="number"
-                    min="1"
-                    step="1"
-                    formControlName="userId"
-                  />
+                <div class="field" *ngIf="adminUsers.length > 0; else manualUserId">
+                  <label for="member-user-id">User</label>
+                  <select id="member-user-id" formControlName="userId">
+                    <option [ngValue]="null" disabled>Select user…</option>
+                    <option *ngFor="let user of adminUsers" [ngValue]="user.id">
+                      {{ user.displayName }} (ID: {{ user.id }})
+                    </option>
+                  </select>
                 </div>
+                <ng-template #manualUserId>
+                  <div class="field">
+                    <label for="member-user-id">User ID</label>
+                    <input
+                      id="member-user-id"
+                      type="number"
+                      min="1"
+                      step="1"
+                      formControlName="userId"
+                    />
+                  </div>
+                </ng-template>
                 <div class="field">
                   <label for="member-role">Project role</label>
                   <select id="member-role" formControlName="role">
@@ -990,55 +999,100 @@
               <p class="workspace-eyebrow">Defect tracker</p>
               <h2>Issues</h2>
             </div>
+            <div class="segmented-control" role="group" aria-label="View mode">
+              <button
+                type="button"
+                class="segmented-btn"
+                [class.active]="viewMode === 'list'"
+                (click)="setViewMode('list')"
+              >
+                List
+              </button>
+              <button
+                type="button"
+                class="segmented-btn"
+                [class.active]="viewMode === 'board'"
+                (click)="setViewMode('board')"
+              >
+                Board
+              </button>
+            </div>
           </div>
 
           <!-- Single Toolbar Row -->
-          <form class="issues-toolbar card" (ngSubmit)="applyIssueFilters()">
+          <form class="issues-toolbar card" (submit)="$event.preventDefault(); applyIssueFilters()">
             <div class="toolbar-search">
               <input
-                type="search"
+                type="text"
                 placeholder="Search issues…"
-                [(ngModel)]="filterText"
+                [ngModel]="filterText"
+                (ngModelChange)="onSearchChange($event)"
                 [ngModelOptions]="{ standalone: true }"
               />
+              <button
+                *ngIf="filterText"
+                type="button"
+                class="search-clear-btn"
+                aria-label="Clear search"
+                (click)="clearSearchText()"
+              >
+                ×
+              </button>
             </div>
             <div class="toolbar-filters">
-              <select [(ngModel)]="filterStatus" [ngModelOptions]="{ standalone: true }">
+              <select
+                [(ngModel)]="filterStatus"
+                (ngModelChange)="applyIssueFilters()"
+                [ngModelOptions]="{ standalone: true }"
+              >
                 <option value="">All statuses</option>
                 <option *ngFor="let status of statuses" [value]="status">
                   {{ formatStatus(status) }}
                 </option>
               </select>
 
-              <select [(ngModel)]="filterPriority" [ngModelOptions]="{ standalone: true }">
+              <select
+                [(ngModel)]="filterPriority"
+                (ngModelChange)="applyIssueFilters()"
+                [ngModelOptions]="{ standalone: true }"
+              >
                 <option value="">All priorities</option>
                 <option *ngFor="let priority of priorities" [value]="priority">
                   {{ priority }}
                 </option>
               </select>
 
-              <select [(ngModel)]="filterSeverity" [ngModelOptions]="{ standalone: true }">
+              <select
+                [(ngModel)]="filterSeverity"
+                (ngModelChange)="applyIssueFilters()"
+                [ngModelOptions]="{ standalone: true }"
+              >
                 <option value="">All severities</option>
                 <option *ngFor="let severity of severities" [value]="severity">
                   {{ severity }}
                 </option>
               </select>
 
-              <select [(ngModel)]="sortField" [ngModelOptions]="{ standalone: true }">
+              <select
+                [(ngModel)]="sortField"
+                (ngModelChange)="applyIssueFilters()"
+                [ngModelOptions]="{ standalone: true }"
+              >
                 <option *ngFor="let field of sortFields" [value]="field">
                   Sort: {{ formatSortField(field) }}
                 </option>
               </select>
 
-              <select [(ngModel)]="pageSize" [ngModelOptions]="{ standalone: true }">
+              <select
+                [(ngModel)]="pageSize"
+                (ngModelChange)="applyIssueFilters()"
+                [ngModelOptions]="{ standalone: true }"
+              >
                 <option *ngFor="let size of pageSizes" [ngValue]="size">{{ size }} per page</option>
               </select>
             </div>
-            <div class="toolbar-actions">
-              <button type="submit" class="btn-primary" [disabled]="loadingBugs && mode === 'real'">
-                Apply filters
-              </button>
-              <button type="button" class="btn-secondary" (click)="clearIssueFilters()">
+            <div class="toolbar-actions" *ngIf="hasActiveIssueFilters">
+              <button type="button" class="clear-filters-link" (click)="clearIssueFilters()">
                 Clear filters
               </button>
             </div>
@@ -1056,15 +1110,19 @@
             No more issues were returned. You are still on the previous page.
           </div>
 
+          <!-- Board Error / Disallowed move message -->
+          <div *ngIf="boardMessage" class="board-message-banner form-error" role="alert">
+            <span>{{ boardMessage }}</span>
+            <button type="button" class="board-message-close" (click)="boardMessage = ''">×</button>
+          </div>
+
           <!-- Empty State -->
           <div
             *ngIf="!loadingBugs && !bugsError && displayedBugs.length === 0"
             class="content-state empty-state card"
           >
             <strong>{{
-              hasActiveIssueFilters
-                ? 'No issues match these filters.'
-                : 'No issues in this project.'
+              hasActiveIssueFilters ? 'No issues match your filters' : 'No issues in this project.'
             }}</strong>
             <span>{{
               hasActiveIssueFilters
@@ -1073,9 +1131,9 @@
             }}</span>
           </div>
 
-          <!-- Issues Table -->
+          <!-- List View: Issues Table -->
           <div
-            *ngIf="!loadingBugs && !bugsError && filteredBugs.length > 0"
+            *ngIf="!loadingBugs && !bugsError && filteredBugs.length > 0 && viewMode === 'list'"
             class="issue-table-wrap card"
           >
             <table class="issue-table">
@@ -1086,6 +1144,7 @@
                   <th>Status</th>
                   <th>Priority</th>
                   <th>Severity</th>
+                  <th>Reporter</th>
                   <th>Assignee</th>
                   <th>Updated</th>
                 </tr>
@@ -1104,7 +1163,6 @@
                   <td class="bug-key">{{ bug.key }}</td>
                   <td class="bug-title-col">
                     <strong>{{ bug.title }}</strong>
-                    <small>Reporter ID {{ bug.reporterId }}</small>
                   </td>
                   <td>
                     <span class="status-indicator">
@@ -1121,7 +1179,8 @@
                     </span>
                   </td>
                   <td>{{ bug.severity }}</td>
-                  <td>{{ bug.assigneeId ? 'User ID ' + bug.assigneeId : 'Unassigned' }}</td>
+                  <td>{{ getUserDisplayName(bug.reporterId) }}</td>
+                  <td>{{ getUserDisplayName(bug.assigneeId) }}</td>
                   <td class="timestamp">{{ formatDate(bug.updatedAt) }}</td>
                 </tr>
               </tbody>
@@ -1150,6 +1209,54 @@
                 Next
               </button>
             </nav>
+          </div>
+
+          <!-- Board View -->
+          <div *ngIf="!loadingBugs && !bugsError && viewMode === 'board'" class="board-view">
+            <div
+              *ngFor="let col of boardColumns"
+              class="board-column card"
+              (dragover)="onColumnDragOver($event)"
+              (drop)="onColumnDrop($event, col.status)"
+            >
+              <div class="board-column-header">
+                <span class="board-column-title">{{ col.label }}</span>
+                <span class="board-column-count">{{ countByStatus(col.status) }}</span>
+              </div>
+              <div class="board-cards">
+                <article
+                  *ngFor="let bug of bugsForColumn(col.status)"
+                  class="board-card"
+                  [class.active]="selectedBug?.key === bug.key"
+                  draggable="true"
+                  (dragstart)="onCardDragStart($event, bug)"
+                  (click)="selectBug(bug)"
+                  (keydown.enter)="selectBug(bug)"
+                  (keydown.space)="$event.preventDefault(); selectBug(bug)"
+                  tabindex="0"
+                  [attr.aria-label]="'Open issue ' + bug.key + ': ' + bug.title"
+                >
+                  <div class="board-card-header">
+                    <span class="bug-key">{{ bug.key }}</span>
+                    <span
+                      class="priority-indicator"
+                      [ngClass]="'priority-' + bug.priority.toLowerCase()"
+                    >
+                      {{ bug.priority }}
+                    </span>
+                  </div>
+                  <h4 class="board-card-title">{{ bug.title }}</h4>
+                  <div class="board-card-footer">
+                    <span class="board-card-assignee">
+                      {{ getUserDisplayName(bug.assigneeId) }}
+                    </span>
+                  </div>
+                </article>
+                <div *ngIf="bugsForColumn(col.status).length === 0" class="board-empty-col">
+                  No issues
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- 2-COLUMN ISSUE DETAIL VIEW (When a row is clicked) -->
@@ -1195,9 +1302,7 @@
                   <ul *ngIf="!commentsLoading && comments.length > 0" class="comments-list">
                     <li *ngFor="let comment of comments" class="comment-item">
                       <div class="comment-meta">
-                        <strong>{{
-                          comment.authorId ? 'User ID ' + comment.authorId : 'Author'
-                        }}</strong>
+                        <strong>{{ getUserDisplayName(comment.authorId) }}</strong>
                         <small>{{ formatDate(comment.createdAt) }}</small>
                       </div>
                       <p class="comment-body">{{ comment.body }}</p>
@@ -1349,6 +1454,10 @@
                   <!-- Assignee Selection -->
                   <h4>Assignee</h4>
                   <div class="assignee-box">
+                    <p class="current-assignee-text">
+                      Current assignee:
+                      <strong>{{ getUserDisplayName(selectedDetail.bug.assigneeId) }}</strong>
+                    </p>
                     <div class="field">
                       <select
                         [(ngModel)]="assigneeUserId"

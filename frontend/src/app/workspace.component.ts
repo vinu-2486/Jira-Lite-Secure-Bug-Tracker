@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, OnInit, ViewChild } from '@angular/core';
 import {
   FormBuilder,
   FormControl,
@@ -44,6 +44,18 @@ import {
 export class WorkspaceComponent implements OnInit {
   @ViewChild('referenceCloseButton') referenceCloseButton?: ElementRef<HTMLButtonElement>;
   mode: 'demo' | 'real' = 'real';
+  viewMode: 'list' | 'board' = 'list';
+  draggedBug: Bug | null = null;
+  boardMessage = '';
+  private searchTimeout?: ReturnType<typeof setTimeout>;
+
+  readonly boardColumns: { status: BugStatus; label: string }[] = [
+    { status: 'OPEN', label: 'Open' },
+    { status: 'IN_PROGRESS', label: 'In progress' },
+    { status: 'RESOLVED', label: 'Resolved' },
+    { status: 'CLOSED', label: 'Closed' },
+    { status: 'REOPENED', label: 'Reopened' },
+  ];
   projects: Project[] = [];
   bugs: Bug[] = [];
   selectedProject: Project | null = null;
@@ -208,6 +220,7 @@ export class WorkspaceComponent implements OnInit {
     private readonly workspace: WorkspaceService,
     private readonly auth: AuthService,
     private readonly router: Router,
+    private readonly cdr: ChangeDetectorRef,
   ) {
     this.createForm = this.formBuilder.nonNullable.group({
       title: ['', [Validators.required, Validators.minLength(5), Validators.maxLength(120)]],
@@ -265,6 +278,15 @@ export class WorkspaceComponent implements OnInit {
         Validators.maxLength(100),
       ]),
     });
+  }
+
+  markForCheck(): void {
+    this.cdr.markForCheck();
+  }
+
+  setViewMode(mode: 'list' | 'board'): void {
+    this.viewMode = mode;
+    this.markForCheck();
   }
 
   ngOnInit(): void {
@@ -640,6 +662,21 @@ export class WorkspaceComponent implements OnInit {
     const selectionId = ++this.projectSelectionId;
     this.loadBugs(project.id, selectionId, 0);
     this.loadProjectMembers(project.id, selectionId);
+    this.markForCheck();
+  }
+
+  onSearchChange(text: string): void {
+    this.filterText = text;
+    clearTimeout(this.searchTimeout);
+    this.searchTimeout = setTimeout(() => {
+      this.applyIssueFilters();
+    }, 300);
+  }
+
+  clearSearchText(): void {
+    this.filterText = '';
+    clearTimeout(this.searchTimeout);
+    this.applyIssueFilters();
   }
 
   applyIssueFilters(): void {
@@ -650,19 +687,160 @@ export class WorkspaceComponent implements OnInit {
     this.noMoreIssues = false;
     this.failedBugPage = null;
     this.loadBugs(this.selectedProject.id, this.projectSelectionId, 0);
+    this.markForCheck();
   }
 
   clearIssueFilters(): void {
+    clearTimeout(this.searchTimeout);
     this.filterText = '';
     this.filterStatus = '';
     this.filterPriority = '';
+    this.filterSeverity = '';
     this.noMoreIssues = false;
     this.failedBugPage = null;
-    this.filterSeverity = '';
     this.sortField = 'createdAt';
     this.sortDirection = 'desc';
     this.pageSize = 25;
     if (this.mode === 'real') this.applyIssueFilters();
+    this.markForCheck();
+  }
+
+  getUserDisplayName(userId: number | null | undefined): string {
+    if (userId === null || userId === undefined) return 'Unassigned';
+    const member = this.projectMembers.find((m) => m.userId === userId);
+    if (member?.displayName) return member.displayName;
+    const adminUser = this.adminUsers.find((u) => u.id === userId);
+    if (adminUser?.displayName) return adminUser.displayName;
+    if (this.currentUser?.id === userId && this.currentUser?.displayName) {
+      return this.currentUser.displayName;
+    }
+    return `User ID ${userId}`;
+  }
+
+  bugsForColumn(status: BugStatus): Bug[] {
+    return this.filteredBugs.filter((bug) => bug.status === status);
+  }
+
+  onCardDragStart(event: DragEvent, bug: Bug): void {
+    this.draggedBug = bug;
+    this.boardMessage = '';
+    if (event.dataTransfer) {
+      event.dataTransfer.setData('text/plain', String(bug.id));
+      event.dataTransfer.effectAllowed = 'move';
+    }
+  }
+
+  onColumnDragOver(event: DragEvent): void {
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move';
+    }
+  }
+
+  onColumnDrop(event: DragEvent, targetStatus: BugStatus): void {
+    event.preventDefault();
+    const bug = this.draggedBug;
+    this.draggedBug = null;
+    if (!bug || !this.selectedProject) return;
+    if (bug.status === targetStatus) return;
+
+    const validation = this.validateTransition(bug, targetStatus);
+    if (!validation.allowed) {
+      this.boardMessage = validation.message;
+      this.markForCheck();
+      return;
+    }
+
+    let reason = '';
+    if (targetStatus === 'CLOSED' || targetStatus === 'REOPENED') {
+      const promptReason = window.prompt('Enter a reason (required)');
+      if (promptReason === null || !promptReason.trim()) {
+        this.boardMessage = 'Status change cancelled: reason is required.';
+        this.markForCheck();
+        return;
+      }
+      reason = promptReason.trim();
+    }
+
+    const projectId = this.selectedProject.id;
+    const selectionId = this.issueSelectionId;
+    this.boardMessage = '';
+    this.workspace.transitionBug(projectId, bug.id, targetStatus, bug.version, reason).subscribe({
+      next: (updatedBug) => {
+        this.replaceBug(updatedBug);
+        if (this.selectedBug?.id === updatedBug.id) {
+          this.selectedBug = updatedBug;
+          if (this.selectedDetail) {
+            this.selectedDetail = { ...this.selectedDetail, bug: updatedBug };
+          }
+        }
+        this.refreshCurrentBugPage();
+        this.loadHistory(selectionId, projectId, bug.id, true);
+        this.markForCheck();
+      },
+      error: (err) => {
+        this.boardMessage = this.formatRequestError(err, 'versioned', 'Could not move issue.');
+        this.markForCheck();
+      },
+    });
+  }
+
+  validateTransition(bug: Bug, targetStatus: BugStatus): { allowed: boolean; message: string } {
+    const actorId = this.auth.currentUser()?.id;
+    const isLead = this.currentProjectRole === 'PROJECT_LEAD' || this.isAppAdmin;
+    const isReporter = bug.reporterId === actorId;
+    const isAssignee = bug.assigneeId !== null && bug.assigneeId === actorId;
+
+    let requiredAction: string | null = null;
+    if ((bug.status === 'OPEN' || bug.status === 'REOPENED') && targetStatus === 'IN_PROGRESS') {
+      requiredAction = 'START';
+    } else if (bug.status === 'IN_PROGRESS' && targetStatus === 'RESOLVED') {
+      requiredAction = 'RESOLVE';
+    } else if (bug.status === 'RESOLVED' && targetStatus === 'CLOSED') {
+      requiredAction = 'CLOSE';
+    } else if (
+      (bug.status === 'RESOLVED' || bug.status === 'CLOSED') &&
+      targetStatus === 'REOPENED'
+    ) {
+      requiredAction = 'REOPEN';
+    }
+
+    if (!requiredAction) {
+      return {
+        allowed: false,
+        message: `Moving from ${this.formatStatus(bug.status)} to ${this.formatStatus(targetStatus)} is not allowed.`,
+      };
+    }
+
+    if (this.selectedDetail?.bug.id === bug.id) {
+      if (!this.selectedDetail.allowedActions.includes(requiredAction)) {
+        return {
+          allowed: false,
+          message: `Action ${requiredAction} is not permitted for your current role.`,
+        };
+      }
+      return { allowed: true, message: '' };
+    }
+
+    let roleAllowed = false;
+    if (requiredAction === 'START' && isAssignee) {
+      roleAllowed = true;
+    } else if (requiredAction === 'RESOLVE' && isAssignee) {
+      roleAllowed = true;
+    } else if (requiredAction === 'CLOSE' && (isReporter || isLead)) {
+      roleAllowed = true;
+    } else if (requiredAction === 'REOPEN' && (isReporter || isLead)) {
+      roleAllowed = true;
+    }
+
+    if (!roleAllowed) {
+      return {
+        allowed: false,
+        message: `You do not have permission to perform action ${requiredAction} on this issue.`,
+      };
+    }
+
+    return { allowed: true, message: '' };
   }
 
   previousBugPage(): void {
@@ -690,6 +868,7 @@ export class WorkspaceComponent implements OnInit {
     this.selectedBug = bug;
     this.selectedDetail = null;
     this.detailError = '';
+    this.markForCheck();
     if (this.mode === 'real' && this.selectedProject) {
       const selectionId = this.issueSelectionId;
       const projectId = this.selectedProject.id;
@@ -706,11 +885,14 @@ export class WorkspaceComponent implements OnInit {
           this.editSeverity = detail.bug.severity;
           this.editError = '';
           this.detailLoading = false;
+          this.assigneeUserId = detail.bug.assigneeId;
+          this.markForCheck();
         },
         error: (error) => {
           if (selectionId !== this.issueSelectionId) return;
           this.detailLoading = false;
           this.handleRequestError(error, 'Issue details could not be loaded.');
+          this.markForCheck();
         },
       });
     }
@@ -733,12 +915,14 @@ export class WorkspaceComponent implements OnInit {
         if (this.commentBody === draft) this.commentBody = '';
         this.loadComments(selectionId, project.id, bug.id, true);
         this.loadHistory(selectionId, project.id, bug.id, true);
+        this.markForCheck();
       },
       error: (error) => {
         if (selectionId !== this.issueSelectionId) return;
         this.commentSubmitting = false;
         this.commentSubmitError = 'Comment could not be added.';
         this.redirectOnUnauthorized(error);
+        this.markForCheck();
       },
     });
   }
@@ -768,7 +952,7 @@ export class WorkspaceComponent implements OnInit {
 
   historyActorLabel(event: HistoryEvent): string {
     if (event.externalAuthor) return `GitHub author: ${event.externalAuthor}`;
-    if (event.actorId !== null) return `User ID ${event.actorId}`;
+    if (event.actorId !== null) return this.getUserDisplayName(event.actorId);
     return 'External activity (author not provided)';
   }
 
@@ -846,6 +1030,7 @@ export class WorkspaceComponent implements OnInit {
           this.editSeverity = bug.severity;
           this.editSubmitting = false;
           this.refreshCurrentBugPage();
+          this.markForCheck();
         },
         error: (error) => {
           if (selectionId !== this.issueSelectionId) return;
@@ -854,6 +1039,7 @@ export class WorkspaceComponent implements OnInit {
           this.editConflict = error.status === 409 ? this.editError : '';
           this.latestVersionNotice = '';
           this.redirectOnUnauthorized(error);
+          this.markForCheck();
         },
       });
   }
@@ -881,6 +1067,7 @@ export class WorkspaceComponent implements OnInit {
         this.assignError = '';
         this.assignConflict = false;
         this.refreshCurrentBugPage();
+        this.markForCheck();
       },
       error: (error) => {
         if (selectionId !== this.issueSelectionId) return;
@@ -891,6 +1078,7 @@ export class WorkspaceComponent implements OnInit {
           'Latest issue version could not be loaded.',
         );
         this.redirectOnUnauthorized(error);
+        this.markForCheck();
       },
     });
   }
@@ -931,12 +1119,13 @@ export class WorkspaceComponent implements OnInit {
         this.replaceBug(bug);
         this.selectedBug = bug;
         this.selectedDetail = { ...this.selectedDetail!, bug };
-        this.assigneeUserId = null;
+        this.assigneeUserId = bug.assigneeId;
         this.assignSubmitting = false;
         this.assignConflict = false;
         this.latestVersionNotice = '';
         this.refreshSelectedDetail(project.id, bug.id, selectionId);
         this.refreshCurrentBugPage();
+        this.markForCheck();
       },
       error: (error) => {
         if (
@@ -953,6 +1142,7 @@ export class WorkspaceComponent implements OnInit {
         );
         this.assignConflict = error.status === 409;
         this.redirectOnUnauthorized(error);
+        this.markForCheck();
       },
     });
   }
@@ -984,6 +1174,7 @@ export class WorkspaceComponent implements OnInit {
         this.createProjectForm.reset({ key: '', name: '', description: '', leadUserId: null });
         this.showCreateProjectForm = false;
         this.refreshProjects();
+        this.markForCheck();
       },
       error: (error: { status?: number }) => {
         this.creatingProject = false;
@@ -996,6 +1187,7 @@ export class WorkspaceComponent implements OnInit {
               : error.status === 403
                 ? 'Only application admins can create projects.'
                 : 'Project could not be created. Check the form and try again.';
+        this.markForCheck();
       },
     });
   }
@@ -1027,6 +1219,7 @@ export class WorkspaceComponent implements OnInit {
         this.addMemberForm.reset({ userId: null, role: 'DEVELOPER' });
         this.addMemberSuccess = 'Project member added.';
         this.loadProjectMembers(project.id, selectionId, true);
+        this.markForCheck();
       },
       error: (error: { status?: number }) => {
         if (selectionId !== this.projectSelectionId || this.selectedProject?.id !== project.id) {
@@ -1040,6 +1233,7 @@ export class WorkspaceComponent implements OnInit {
               ? 'You are not allowed to add this member or role.'
               : 'Project member could not be added.';
         this.redirectOnUnauthorized(error);
+        this.markForCheck();
       },
     });
   }
@@ -1093,6 +1287,7 @@ export class WorkspaceComponent implements OnInit {
         this.refreshSelectedDetail(projectId, bug.id, selectionId);
         this.refreshCurrentBugPage();
         this.loadHistory(selectionId, projectId, bug.id, true);
+        this.markForCheck();
       },
       error: (error) => {
         if (selectionId !== this.issueSelectionId) return;
@@ -1104,6 +1299,7 @@ export class WorkspaceComponent implements OnInit {
         );
         this.actionConflict = error.status === 409;
         this.redirectOnUnauthorized(error);
+        this.markForCheck();
       },
     });
   }
@@ -1146,6 +1342,7 @@ export class WorkspaceComponent implements OnInit {
         this.showCreateForm = false;
         this.creating = false;
         this.refreshCurrentBugPage();
+        this.markForCheck();
       },
       error: (error) => {
         if (selectionId !== this.projectSelectionId) return;
@@ -1156,6 +1353,7 @@ export class WorkspaceComponent implements OnInit {
           'We could not create this issue.',
         );
         this.redirectOnUnauthorized(error);
+        this.markForCheck();
       },
     });
   }
@@ -1205,11 +1403,13 @@ export class WorkspaceComponent implements OnInit {
         this.showCreateUserModal = false;
         this.adminUsers = [user, ...this.adminUsers.filter((existing) => existing.id !== user.id)];
         this.adminUserEdits[user.id] = { role: this.globalRoleForUser(user.role) };
+        this.markForCheck();
       },
       error: (error: { status?: number }) => {
         this.creatingAdminUser = false;
         this.createAdminUserError = this.adminMutationError(error, 'create user');
         this.redirectOnUnauthorized(error);
+        this.markForCheck();
       },
     });
   }
@@ -1226,6 +1426,7 @@ export class WorkspaceComponent implements OnInit {
         );
         this.adminUserEdits[updated.id] = { role: this.globalRoleForUser(updated.role) };
         this.adminUserUpdates[updated.id] = { loading: false, error: '' };
+        this.markForCheck();
       },
       error: (error: { status?: number }) => {
         this.adminUserUpdates[user.id] = {
@@ -1233,6 +1434,7 @@ export class WorkspaceComponent implements OnInit {
           error: this.adminMutationError(error, 'update user role'),
         };
         this.redirectOnUnauthorized(error);
+        this.markForCheck();
       },
     });
   }
@@ -1279,11 +1481,13 @@ export class WorkspaceComponent implements OnInit {
           owner: '',
           repositoryName: '',
         });
+        this.markForCheck();
       },
       error: (error: { status?: number }) => {
         this.bindingGitHubRepository = false;
         this.bindGitHubError = this.adminMutationError(error, 'bind repository');
         this.redirectOnUnauthorized(error);
+        this.markForCheck();
       },
     });
   }
@@ -1298,14 +1502,17 @@ export class WorkspaceComponent implements OnInit {
     if (nav === 'admin' && this.isAppAdmin && !this.adminUsersLoaded) {
       this.loadAdminUsers();
     }
+    this.markForCheck();
   }
 
   toggleMobileSidebar(): void {
     this.mobileSidebarOpen = !this.mobileSidebarOpen;
+    this.markForCheck();
   }
 
   openCreateIssue(): void {
     this.showCreateForm = true;
+    this.markForCheck();
   }
 
   closeCreateIssue(): void {
@@ -1313,24 +1520,32 @@ export class WorkspaceComponent implements OnInit {
     this.createError = '';
     this.createDueDate = '';
     this.stagedAttachments = [];
+    this.markForCheck();
   }
 
   openCreateProject(): void {
     this.showCreateProjectForm = true;
+    if (this.isAppAdmin && !this.adminUsersLoaded) {
+      this.loadAdminUsers();
+    }
+    this.markForCheck();
   }
 
   closeCreateProject(): void {
     this.showCreateProjectForm = false;
     this.createProjectError = '';
+    this.markForCheck();
   }
 
   openCreateUser(): void {
     this.showCreateUserModal = true;
+    this.markForCheck();
   }
 
   closeCreateUser(): void {
     this.showCreateUserModal = false;
     this.createAdminUserError = '';
+    this.markForCheck();
   }
 
   get currentUser() {
@@ -1392,6 +1607,7 @@ export class WorkspaceComponent implements OnInit {
     if (this.loadingProjects) return;
     this.loadingProjects = true;
     this.projectsError = '';
+    this.markForCheck();
     this.workspace.getProjects().subscribe({
       next: (projects) => {
         this.projects = projects;
@@ -1400,11 +1616,13 @@ export class WorkspaceComponent implements OnInit {
           this.selectProject(projects[0]);
         }
         this.loadQueuedProjectRefresh();
+        this.markForCheck();
       },
       error: (error) => {
         this.loadingProjects = false;
         this.handleRequestError(error, 'Projects could not be loaded.');
         this.loadQueuedProjectRefresh();
+        this.markForCheck();
       },
     });
   }
@@ -1414,6 +1632,7 @@ export class WorkspaceComponent implements OnInit {
     if (force) this.adminUsersLoadSubscription?.unsubscribe();
     this.adminUsersLoading = true;
     this.adminUsersError = '';
+    this.markForCheck();
     this.adminUsersLoadSubscription = this.workspace.getAdminUsers().subscribe({
       next: (users) => {
         this.adminUsersLoading = false;
@@ -1424,12 +1643,14 @@ export class WorkspaceComponent implements OnInit {
           userList.map((user) => [user.id, { role: this.globalRoleForUser(user.role) }]),
         );
         this.adminUsersLoaded = true;
+        this.markForCheck();
       },
       error: (error: { status?: number }) => {
         this.adminUsersLoading = false;
         this.adminUsersLoaded = false;
         this.adminUsersError = this.adminMutationError(error, 'load users');
         this.redirectOnUnauthorized(error);
+        this.markForCheck();
       },
     });
   }
@@ -1488,6 +1709,7 @@ export class WorkspaceComponent implements OnInit {
     };
     this.loadingBugs = true;
     this.bugsError = '';
+    this.markForCheck();
     this.bugsLoadSubscription = this.workspace.getBugs(projectId, query).subscribe({
       next: (bugs) => {
         if (
@@ -1502,12 +1724,14 @@ export class WorkspaceComponent implements OnInit {
         if (bugs.length === 0 && page > 0 && page > this.pageIndex) {
           this.hasNextPage = false;
           this.noMoreIssues = true;
+          this.markForCheck();
           return;
         }
         this.bugs = bugs;
         this.pageIndex = page;
         this.hasNextPage = bugs.length === this.pageSize;
         this.noMoreIssues = false;
+        this.markForCheck();
       },
       error: (error) => {
         if (
@@ -1521,6 +1745,7 @@ export class WorkspaceComponent implements OnInit {
         this.failedBugPage = page;
         this.bugsError = this.formatRequestError(error, 'list', 'Issues could not be loaded.');
         this.redirectOnUnauthorized(error);
+        this.markForCheck();
       },
     });
   }
@@ -1534,6 +1759,7 @@ export class WorkspaceComponent implements OnInit {
     this.membersLoading = true;
     this.membersLoaded = false;
     this.membersError = '';
+    this.markForCheck();
     this.membersLoadSubscription = this.workspace.getProjectMembers(projectId).subscribe({
       next: (members) => {
         if (selectionId !== this.projectSelectionId || this.selectedProject?.id !== projectId) {
@@ -1542,6 +1768,7 @@ export class WorkspaceComponent implements OnInit {
         this.projectMembers = members;
         this.membersLoading = false;
         this.membersLoaded = true;
+        this.markForCheck();
       },
       error: (error: { status?: number }) => {
         if (selectionId !== this.projectSelectionId || this.selectedProject?.id !== projectId) {
@@ -1554,6 +1781,7 @@ export class WorkspaceComponent implements OnInit {
             ? 'Members are unavailable or this project is not accessible.'
             : 'Project members could not be loaded.';
         this.redirectOnUnauthorized(error);
+        this.markForCheck();
       },
     });
   }
@@ -1624,6 +1852,7 @@ export class WorkspaceComponent implements OnInit {
   private refreshSelectedDetail(projectId: number, bugId: number, selectionId: number): void {
     this.detailLoading = true;
     this.detailError = '';
+    this.markForCheck();
     this.workspace.getBug(projectId, bugId).subscribe({
       next: (detail) => {
         if (
@@ -1636,7 +1865,9 @@ export class WorkspaceComponent implements OnInit {
         this.selectedDetail = detail;
         this.selectedBug = detail.bug;
         this.replaceBug(detail.bug);
+        this.assigneeUserId = detail.bug.assigneeId;
         this.detailLoading = false;
+        this.markForCheck();
       },
       error: (error) => {
         if (
@@ -1653,6 +1884,7 @@ export class WorkspaceComponent implements OnInit {
           'Issue details could not be refreshed.',
         );
         this.redirectOnUnauthorized(error);
+        this.markForCheck();
       },
     });
   }
@@ -1698,17 +1930,20 @@ export class WorkspaceComponent implements OnInit {
 
     this.commentsLoading = true;
     this.commentsError = '';
+    this.markForCheck();
     this.commentsLoadSubscription = this.workspace.getComments(projectId, bugId).subscribe({
       next: (comments) => {
         if (selectionId !== this.issueSelectionId) return;
         this.comments = comments;
         this.commentsLoading = false;
+        this.markForCheck();
       },
       error: (error) => {
         if (selectionId !== this.issueSelectionId) return;
         this.commentsLoading = false;
         this.commentsError = 'Comments could not be loaded.';
         this.redirectOnUnauthorized(error);
+        this.markForCheck();
       },
     });
   }
@@ -1720,17 +1955,20 @@ export class WorkspaceComponent implements OnInit {
 
     this.historyLoading = true;
     this.historyError = '';
+    this.markForCheck();
     this.historyLoadSubscription = this.workspace.getHistory(projectId, bugId).subscribe({
       next: (history) => {
         if (selectionId !== this.issueSelectionId) return;
         this.history = history;
         this.historyLoading = false;
+        this.markForCheck();
       },
       error: (error) => {
         if (selectionId !== this.issueSelectionId) return;
         this.historyLoading = false;
         this.historyError = 'Activity could not be loaded.';
         this.redirectOnUnauthorized(error);
+        this.markForCheck();
       },
     });
   }
@@ -1740,7 +1978,10 @@ export class WorkspaceComponent implements OnInit {
   }
 
   private formatAssignee(value: string | null): string {
-    return value ? `User ID ${value}` : 'Unassigned';
+    if (!value) return 'Unassigned';
+    const num = Number(value);
+    if (!isNaN(num)) return this.getUserDisplayName(num);
+    return value;
   }
 
   private redirectOnUnauthorized(error: { status?: number }): boolean {
