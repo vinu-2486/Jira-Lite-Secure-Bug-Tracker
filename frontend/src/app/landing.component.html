@@ -6,46 +6,119 @@
     </a>
     <nav aria-label="Primary navigation">
       <a class="nav-login" routerLink="/login">Log in</a>
-      <a class="btn-primary" routerLink="/register">Sign up</a>
+      <a class="btn-primary" routerLink="/register">Get started</a>
     </nav>
   </div>
 </header>
 
 <main class="landing-main">
+  <!-- Hero Section -->
   <section class="hero-section">
-    <p class="hero-eyebrow">JILA / BUG TRACKING FOR TEAMS</p>
+    <p class="hero-eyebrow">DEFECT TRACKING FOR FAST ENGINEERING TEAMS</p>
     <h1 class="hero-title">Keep the signal.<br /><span>Lose the scramble.</span></h1>
     <p class="hero-subtext">
-      A focused place to turn rough reports into work your team can actually finish.
+      A fast, focused workspace to triage, track, and resolve defects with strict workflow
+      discipline and zero unnecessary friction.
     </p>
     <div class="hero-actions">
-      <a class="btn-primary hero-btn" routerLink="/register">Get started</a>
-      <a class="btn-secondary hero-btn" routerLink="/login">Log in →</a>
+      <a class="btn-primary hero-btn" routerLink="/register">Get started free</a>
+      <a class="btn-secondary hero-btn" routerLink="/login">Sign in →</a>
     </div>
   </section>
 
+  <!-- How It Works Strip -->
+  <section class="how-it-works-section">
+    <div class="strip-header">
+      <h2>How it works</h2>
+      <p>A structured lifecycle designed to turn issue reports into verified fixes.</p>
+    </div>
+    <div class="strip-grid">
+      <div class="strip-step">
+        <span class="step-num">01</span>
+        <h4>Capture & Triage</h4>
+        <p>
+          File defects with defined priority and severity. Triage them cleanly into your backlog.
+        </p>
+      </div>
+      <div class="strip-step">
+        <span class="step-num">02</span>
+        <h4>Assign & Transition</h4>
+        <p>
+          Assign issues to verified project members with assignee-validated workflow transitions.
+        </p>
+      </div>
+      <div class="strip-step">
+        <span class="step-num">03</span>
+        <h4>Trace & Resolve</h4>
+        <p>Track history, comments, and linked GitHub commits and pull requests in one timeline.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Feature Cards -->
   <section class="features-section">
     <div class="feature-card">
-      <p class="card-eyebrow">01 / ONE VIEW</p>
-      <h3>See what needs attention</h3>
+      <p class="card-eyebrow">WORKFLOW</p>
+      <h3>Strict Bug Lifecycle</h3>
       <p>
-        The board keeps status, ownership and priority close together so you always know what to
-        tackle next.
+        Move issues through defined stages (OPEN, IN_PROGRESS, RESOLVED, CLOSED, REOPENED) with
+        assignee-based transition checks and mandatory closing reasons.
       </p>
     </div>
     <div class="feature-card">
-      <p class="card-eyebrow">02 / CONTEXT</p>
-      <h3>Every ticket has a next step</h3>
+      <p class="card-eyebrow">COLLABORATION</p>
+      <h3>Role-Based Access</h3>
       <p>
-        Descriptions, owners and status history live together, so handoffs do not depend on memory.
+        Project leads, developers, and reporters operate with granular permissions at the API and
+        database layer, ensuring changes are always authorized.
       </p>
     </div>
     <div class="feature-card">
-      <p class="card-eyebrow">03 / SIMPLICITY</p>
-      <h3>A quieter way to fix things</h3>
+      <p class="card-eyebrow">TRACEABILITY</p>
+      <h3>GitHub Webhook Integration</h3>
       <p>
-        Keep reports, owners and progress close enough to act on without the scramble or overhead.
+        Bind your GitHub repositories to track commit SHAs and pull request events linked directly
+        to issue keys in an immutable activity timeline.
       </p>
+    </div>
+  </section>
+
+  <!-- Security Section (only what the code implements) -->
+  <section class="security-section">
+    <div class="security-header">
+      <p class="card-eyebrow">SECURITY ARCHITECTURE</p>
+      <h2>Enterprise security by default</h2>
+      <p>Engineered with defense-in-depth security controls verified at every layer.</p>
+    </div>
+    <div class="security-grid">
+      <div class="security-card">
+        <h4>Cookie Session Security</h4>
+        <p>
+          HttpOnly, SameSite, Secure cookie-based authentication with session fixation protection
+          and brute-force rate limiting.
+        </p>
+      </div>
+      <div class="security-card">
+        <h4>Role-Based Access Control</h4>
+        <p>
+          Enforced across all project boundaries. Transitions verify assignee status, and
+          administrative operations require APP_ADMIN authority.
+        </p>
+      </div>
+      <div class="security-card">
+        <h4>Comprehensive Audit Trail</h4>
+        <p>
+          Every status transition, assignment change, field edit, and external activity event is
+          logged to an append-only audit trail.
+        </p>
+      </div>
+      <div class="security-card">
+        <h4>Hardened Security Headers</h4>
+        <p>
+          Strict Content-Security-Policy (CSP), HSTS (max-age 31536000), X-Content-Type-Options
+          nosniff, and X-Frame-Options DENY on every response.
+        </p>
+      </div>
     </div>
   </section>
 </main>
@@ -56,6 +129,6 @@
       <span class="brand-mark">J</span>
       <span>JILA</span>
     </div>
-    <p>Bug tracking for teams.</p>
+    <p>Jira-Lite Secure Bug Tracker. Built for engineering teams.</p>
   </div>
 </footer>

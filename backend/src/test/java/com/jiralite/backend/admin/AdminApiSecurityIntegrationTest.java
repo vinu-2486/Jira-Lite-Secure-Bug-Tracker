@@ -396,24 +396,30 @@ class AdminApiSecurityIntegrationTest {
                         .content("{\"userId\":" + developer.getId() + ",\"version\":" + version + "}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.assigneeId", is(developer.getId().intValue())))
+                .andExpect(jsonPath("$.version", is((int) (version + 1))))
                 .andReturn();
-        version = currentVersion(project.getId(), bugId, reporter);
+        version = ((Number) com.jayway.jsonpath.JsonPath.read(
+                assigned.getResponse().getContentAsString(), "$.version")).longValue();
 
         var started = mvc.perform(post("/api/projects/" + project.getId() + "/bugs/" + bugId + "/transitions")
                         .with(as(developer)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\":\"IN_PROGRESS\",\"version\":" + version + "}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status", is("IN_PROGRESS")))
+                .andExpect(jsonPath("$.version", is((int) (version + 1))))
                 .andReturn();
-        version = currentVersion(project.getId(), bugId, reporter);
+        version = ((Number) com.jayway.jsonpath.JsonPath.read(
+                started.getResponse().getContentAsString(), "$.version")).longValue();
 
         var resolved = mvc.perform(post("/api/projects/" + project.getId() + "/bugs/" + bugId + "/transitions")
                         .with(as(developer)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\":\"RESOLVED\",\"version\":" + version + "}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status", is("RESOLVED")))
+                .andExpect(jsonPath("$.version", is((int) (version + 1))))
                 .andReturn();
-        version = currentVersion(project.getId(), bugId, reporter);
+        version = ((Number) com.jayway.jsonpath.JsonPath.read(
+                resolved.getResponse().getContentAsString(), "$.version")).longValue();
 
         mvc.perform(post("/api/projects/" + project.getId() + "/bugs/" + bugId + "/transitions")
                         .with(as(reporter)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
@@ -437,6 +443,62 @@ class AdminApiSecurityIntegrationTest {
                         .with(as(reporter)))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Workflow follow-up")));
+    }
+
+    @Test
+    void staleVersionUpdateReturnsConflict() throws Exception {
+        User lead = saveUser(GlobalRole.USER);
+        User reporter = saveUser(GlobalRole.USER);
+        Project project = saveProject("VER");
+        members.save(new ProjectMember(project, lead, ProjectRole.PROJECT_LEAD));
+        members.save(new ProjectMember(project, reporter, ProjectRole.REPORTER));
+
+        var created = mvc.perform(post("/api/projects/" + project.getId() + "/bugs")
+                        .with(as(reporter)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Versioned bug\",\"description\":\"Initial description\","
+                                + "\"priority\":\"HIGH\",\"severity\":\"MAJOR\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        Long bugId = ((Number) com.jayway.jsonpath.JsonPath.read(
+                created.getResponse().getContentAsString(), "$.id")).longValue();
+        Long initialVersion = ((Number) com.jayway.jsonpath.JsonPath.read(
+                created.getResponse().getContentAsString(), "$.version")).longValue();
+
+        var updated = mvc.perform(patch("/api/projects/" + project.getId() + "/bugs/" + bugId)
+                        .with(as(reporter)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Updated title\",\"description\":\"Updated description\","
+                                + "\"priority\":\"HIGH\",\"severity\":\"MAJOR\",\"version\":" + initialVersion + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version", is((int) (initialVersion + 1))))
+                .andReturn();
+
+        mvc.perform(patch("/api/projects/" + project.getId() + "/bugs/" + bugId)
+                        .with(as(reporter)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Conflicting update\",\"description\":\"Should fail\","
+                                + "\"priority\":\"HIGH\",\"severity\":\"MAJOR\",\"version\":" + initialVersion + "}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void responseContainsRequiredSecurityHeaders() throws Exception {
+        mvc.perform(get("/api/auth/csrf").secure(true))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"))
+                .andExpect(header().string("X-Frame-Options", "DENY"))
+                .andExpect(header().string("Referrer-Policy", "no-referrer"))
+                .andExpect(header().string("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'"))
+                .andExpect(header().string("Strict-Transport-Security", "max-age=31536000 ; includeSubDomains"));
+    }
+
+    @Test
+    void corsPreflightHandlesAllowedOriginAndExplicitHeaders() throws Exception {
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options("/api/auth/csrf")
+                        .header("Origin", "http://localhost:4200")
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers", "Authorization, Content-Type"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:4200"))
+                .andExpect(header().string("Access-Control-Allow-Credentials", "true"))
+                .andExpect(header().string("Access-Control-Allow-Methods", containsString("POST")));
     }
 
     private User saveUser(GlobalRole role) {

@@ -188,10 +188,11 @@ public class BugService {
         bug.setDescription(request.description().trim());
         bug.setPriority(request.priority());
         bug.setSeverity(request.severity());
-        bugs.save(bug);
-        history.save(new BugHistory(bug, actor(actorId), "FIELD_EDIT", oldValue,
-                bug.getTitle() + "\n" + bug.getDescription() + "\n" + bug.getPriority() + "\n" + bug.getSeverity(), null));
-        return BugResponse.from(bug);
+        Bug saved = bugs.saveAndFlush(bug);
+        if (saved == null) saved = bug;
+        history.save(new BugHistory(saved, actor(actorId), "FIELD_EDIT", oldValue,
+                saved.getTitle() + "\n" + saved.getDescription() + "\n" + saved.getPriority() + "\n" + saved.getSeverity(), null));
+        return BugResponse.from(saved);
     }
 
     @Transactional
@@ -207,10 +208,11 @@ public class BugService {
         User user = assignee.getUser();
         String oldValue = bug.getAssignee() == null ? null : String.valueOf(bug.getAssignee().getId());
         bug.setAssignee(user);
-        bugs.save(bug);
-        history.save(new BugHistory(bug, actor(actorId), "ASSIGNMENT", oldValue,
+        Bug saved = bugs.saveAndFlush(bug);
+        if (saved == null) saved = bug;
+        history.save(new BugHistory(saved, actor(actorId), "ASSIGNMENT", oldValue,
                 String.valueOf(user.getId()), null));
-        return BugResponse.from(bug);
+        return BugResponse.from(saved);
     }
 
     @Transactional
@@ -239,16 +241,17 @@ public class BugService {
         bug.setStatus(to);
         if (to == BugStatus.CLOSED) bug.setResolution(request.reason().trim());
         if (to == BugStatus.REOPENED) bug.setResolution(null);
-        bugs.save(bug);
-        history.save(new BugHistory(bug, actor(actorId), "STATUS_CHANGE", from.name(), to.name(), request.reason()));
-        return BugResponse.from(bug);
+        Bug saved = bugs.saveAndFlush(bug);
+        if (saved == null) saved = bug;
+        history.save(new BugHistory(saved, actor(actorId), "STATUS_CHANGE", from.name(), to.name(), request.reason()));
+        return BugResponse.from(saved);
     }
 
     @Transactional
     public CommentResponse addComment(Long projectId, Long bugId, Long actorId, AddCommentRequest request) {
         requireMember(projectId, actorId);
         Bug bug = findBug(projectId, bugId);
-        BugComment comment = comments.save(new BugComment(bug, actor(actorId), request.body().trim()));
+        BugComment comment = comments.saveAndFlush(new BugComment(bug, actor(actorId), request.body().trim()));
         history.save(new BugHistory(bug, actor(actorId), "COMMENT", null, null, request.body().trim()));
         return CommentResponse.from(comment);
     }

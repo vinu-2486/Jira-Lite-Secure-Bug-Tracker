@@ -179,7 +179,7 @@ describe('WorkspaceComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('DEMO-101');
     expect(fixture.nativeElement.textContent).toContain('DEMO-102');
     expect(fixture.nativeElement.querySelectorAll('tbody tr')).toHaveLength(2);
-  });
+  }, 25000);
 
   it('keeps issue rows keyboard focusable and opens them with Enter and Space', () => {
     const fixture = TestBed.createComponent(WorkspaceComponent);

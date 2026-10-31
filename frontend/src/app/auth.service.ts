@@ -9,6 +9,11 @@ export interface AuthUser {
   role: string;
 }
 
+export interface AuthConfig {
+  googleEnabled: boolean;
+  googleClientId: string | null;
+}
+
 interface LoginCredentials {
   email: string;
   password: string;
@@ -23,8 +28,22 @@ interface SignupDetails {
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   readonly currentUser = signal<AuthUser | null>(null);
+  readonly authConfig = signal<AuthConfig>({ googleEnabled: false, googleClientId: null });
 
-  constructor(private readonly http: HttpClient) {}
+  constructor(private readonly http: HttpClient) {
+    this.loadAuthConfig().subscribe();
+  }
+
+  loadAuthConfig(): Observable<AuthConfig> {
+    return this.http.get<AuthConfig>('/api/auth/config').pipe(
+      tap((config) => this.authConfig.set(config)),
+      catchError(() => {
+        const fallback: AuthConfig = { googleEnabled: false, googleClientId: null };
+        this.authConfig.set(fallback);
+        return of(fallback);
+      }),
+    );
+  }
 
   refreshSession(): Observable<AuthUser | null> {
     return this.http.get<AuthUser>('/api/auth/me').pipe(
@@ -42,6 +61,16 @@ export class AuthService {
   login(credentials: LoginCredentials): Observable<AuthUser> {
     return this.bootstrapCsrf().pipe(
       switchMap(() => this.http.post<AuthUser>('/api/auth/login', credentials)),
+      switchMap(() => this.refreshSession()),
+      switchMap((user) =>
+        user ? of(user) : throwError(() => new Error('The session could not be restored.')),
+      ),
+    );
+  }
+
+  loginWithGoogle(credential: string): Observable<AuthUser> {
+    return this.bootstrapCsrf().pipe(
+      switchMap(() => this.http.post<AuthUser>('/api/auth/google', { credential })),
       switchMap(() => this.refreshSession()),
       switchMap((user) =>
         user ? of(user) : throwError(() => new Error('The session could not be restored.')),

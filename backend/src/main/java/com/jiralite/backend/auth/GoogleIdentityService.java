@@ -23,7 +23,7 @@ public class GoogleIdentityService {
 
     public GoogleIdentityService(GoogleIdTokenVerifier verifier, UserRepository users,
                                  GoogleUserProvisioningService provisioning,
-                                 @Value("${JIRALITE_GOOGLE_CLIENT_ID:}") String clientId) {
+                                 @Value("${GOOGLE_CLIENT_ID:${JIRALITE_GOOGLE_CLIENT_ID:}}") String clientId) {
         this.verifier = verifier;
         this.users = users;
         this.provisioning = provisioning;
@@ -32,6 +32,10 @@ public class GoogleIdentityService {
 
     public boolean isEnabled() {
         return !clientId.isBlank();
+    }
+
+    public String getClientId() {
+        return clientId;
     }
 
     public AppUserDetails resolve(String credential) {
@@ -46,16 +50,27 @@ public class GoogleIdentityService {
             throw new GoogleCredentialException();
         }
 
+        String normalizedEmail = email.trim().toLowerCase();
         User user = users.findByGoogleSub(googleSub).orElse(null);
-        if (user == null) {
-            String normalizedEmail = email.trim().toLowerCase();
+        if (user != null) {
+            if (!user.getEmail().equalsIgnoreCase(normalizedEmail)
+                    && users.findByEmailIgnoreCase(normalizedEmail).isPresent()) {
+                throw new GoogleAccountCollisionException();
+            }
+        } else {
             if (users.findByEmailIgnoreCase(normalizedEmail).isPresent()) {
-                throw new GoogleCredentialException();
+                throw new GoogleAccountCollisionException();
             }
             try {
                 user = provisioning.createUser(googleSub, normalizedEmail, displayName(payload, normalizedEmail));
             } catch (DataIntegrityViolationException conflict) {
-                user = users.findByGoogleSub(googleSub).orElseThrow(GoogleCredentialException::new);
+                user = users.findByGoogleSub(googleSub).orElse(null);
+                if (user == null) {
+                    if (users.findByEmailIgnoreCase(normalizedEmail).isPresent()) {
+                        throw new GoogleAccountCollisionException();
+                    }
+                    throw new GoogleCredentialException();
+                }
             }
         }
         AppUserDetails details = new AppUserDetails(user);

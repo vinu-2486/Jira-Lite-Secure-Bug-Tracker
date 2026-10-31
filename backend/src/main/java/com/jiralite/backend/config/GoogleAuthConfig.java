@@ -15,7 +15,7 @@ public class GoogleAuthConfig {
     @Bean
     @ConditionalOnMissingBean(GoogleIdTokenVerifier.class)
     GoogleIdTokenVerifier googleIdTokenVerifier(
-            @Value("${JIRALITE_GOOGLE_CLIENT_ID:}") String clientId) throws Exception {
+            @Value("${GOOGLE_CLIENT_ID:${JIRALITE_GOOGLE_CLIENT_ID:}}") String clientId) throws Exception {
         GoogleIdTokenVerifier.Builder builder = new GoogleIdTokenVerifier.Builder(
                 GoogleNetHttpTransport.newTrustedTransport(), GsonFactory.getDefaultInstance())
                 .setIssuers(List.of("accounts.google.com", "https://accounts.google.com"));

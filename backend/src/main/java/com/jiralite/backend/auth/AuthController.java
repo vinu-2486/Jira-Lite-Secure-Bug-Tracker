@@ -60,11 +60,17 @@ public class AuthController {
         }
     }
 
+    @GetMapping("/config")
+    public AuthConfigResponse config() {
+        return new AuthConfigResponse(googleIdentity.isEnabled(),
+                googleIdentity.isEnabled() ? googleIdentity.getClientId() : null);
+    }
+
     @PostMapping("/google")
     public MeResponse google(@Valid @RequestBody GoogleLoginRequest body,
                              HttpServletRequest req, HttpServletResponse res) {
         if (!googleIdentity.isEnabled()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Google authentication is not configured");
         }
         requireCsrfHeader(req);
         try {
@@ -72,6 +78,9 @@ public class AuthController {
             log.info("security_event actor={} action=GOOGLE_LOGIN outcome=SUCCESS", user.getId());
             return establishSession(new UsernamePasswordAuthenticationToken(user, user.getPassword(),
                     user.getAuthorities()), req, res);
+        } catch (GoogleAccountCollisionException ex) {
+            log.info("security_event actor=anonymous action=GOOGLE_LOGIN outcome=FAILURE reason=EMAIL_COLLISION");
+            throw ex;
         } catch (GoogleCredentialException ex) {
             log.info("security_event actor=anonymous action=GOOGLE_LOGIN outcome=FAILURE");
             throw invalidGoogle();

@@ -91,6 +91,9 @@ export class WorkspaceComponent implements OnInit {
   sortField: BugSortField = 'createdAt';
   sortDirection: SortDirection = 'desc';
   private failedBugPage: number | null = null;
+  activeNav: 'overview' | 'issues' | 'admin' = 'issues';
+  mobileSidebarOpen = false;
+  showCreateUserModal = false;
   showCreateForm = false;
   creating = false;
   createError = '';
@@ -946,6 +949,7 @@ export class WorkspaceComponent implements OnInit {
         this.creatingAdminUser = false;
         this.createAdminUserSuccess = `User ${user.email} was created.`;
         this.createAdminUserForm.reset({ email: '', displayName: '', password: '', role: 'USER' });
+        this.showCreateUserModal = false;
         this.adminUsers = [user, ...this.adminUsers.filter((existing) => existing.id !== user.id)];
         this.adminUserEdits[user.id] = { role: this.globalRoleForUser(user.role) };
       },
@@ -1035,7 +1039,53 @@ export class WorkspaceComponent implements OnInit {
     if (!this.bindingGitHubRepository) this.bindGitHubRepository();
   }
 
+  setActiveNav(nav: 'overview' | 'issues' | 'admin'): void {
+    this.activeNav = nav;
+    this.mobileSidebarOpen = false;
+    if (nav === 'admin' && this.isAppAdmin && !this.adminUsersLoaded) {
+      this.loadAdminUsers();
+    }
+  }
+
+  toggleMobileSidebar(): void {
+    this.mobileSidebarOpen = !this.mobileSidebarOpen;
+  }
+
+  openCreateIssue(): void {
+    this.showCreateForm = true;
+  }
+
+  closeCreateIssue(): void {
+    this.showCreateForm = false;
+    this.createError = '';
+  }
+
+  openCreateProject(): void {
+    this.showCreateProjectForm = true;
+  }
+
+  closeCreateProject(): void {
+    this.showCreateProjectForm = false;
+    this.createProjectError = '';
+  }
+
+  openCreateUser(): void {
+    this.showCreateUserModal = true;
+  }
+
+  closeCreateUser(): void {
+    this.showCreateUserModal = false;
+    this.createAdminUserError = '';
+  }
+
+  get currentUser() {
+    return this.auth.currentUser();
+  }
+
   scrollToSection(id: string): void {
+    if (id === 'dashboard') this.setActiveNav('overview');
+    else if (id === 'issues') this.setActiveNav('issues');
+    else if (id === 'admin-controls') this.setActiveNav('admin');
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 

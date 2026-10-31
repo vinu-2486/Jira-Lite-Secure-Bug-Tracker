@@ -73,7 +73,7 @@ class GoogleAuthIntegrationTest {
                 "first@example.com", "aud@example.com", "issuer@example.com", "expired@example.com",
                 "unverified@example.com", "missing-sub@example.com", "csrf@example.com",
                 "collision@example.com", "new-sub@example.com", "accounts.google.com@example.com",
-                "https://accounts.google.com@example.com");
+                "https://accounts.google.com@example.com", "admin-collision@example.com");
         ownedEmails.stream()
                 .map(users::findByEmailIgnoreCase)
                 .flatMap(Optional::stream)
@@ -169,11 +169,34 @@ class GoogleAuthIntegrationTest {
 
         User existing = users.save(new User("collision@example.com", "Existing",
                 encoder.encode("existing-password"), GlobalRole.USER));
-        assertUnauthorized(token("new-sub", "collision@example.com", "Changed", true,
-                "accounts.google.com", Instant.now().plusSeconds(300), "test-client"));
+        mvc.perform(post("/api/auth/google").with(SecurityMockMvcRequestPostProcessors.csrf()).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(token("new-sub", "collision@example.com", "Changed", true,
+                                "accounts.google.com", Instant.now().plusSeconds(300), "test-client"))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value(
+                        "An account with this email already exists. Sign in with your password to link your Google account or use account recovery."));
         User unchanged = users.findById(existing.getId()).orElseThrow();
         org.assertj.core.api.Assertions.assertThat(unchanged.getDisplayName()).isEqualTo("Existing");
         org.assertj.core.api.Assertions.assertThat(unchanged.getGoogleSub()).isNull();
+    }
+
+    @Test
+    void rejectsCollisionWithAdminAccountAndDoesNotLinkOrElevate() throws Exception {
+        User admin = users.save(new User("admin-collision@example.com", "Admin User",
+                encoder.encode("admin-secure-password"), GlobalRole.APP_ADMIN));
+        mvc.perform(post("/api/auth/google").with(SecurityMockMvcRequestPostProcessors.csrf()).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(token("admin-sub", "admin-collision@example.com", "Attacker", true,
+                                "accounts.google.com", Instant.now().plusSeconds(300), "test-client"))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value(
+                        "An account with this email already exists. Sign in with your password to link your Google account or use account recovery."));
+
+        User unchangedAdmin = users.findById(admin.getId()).orElseThrow();
+        org.assertj.core.api.Assertions.assertThat(unchangedAdmin.getRole()).isEqualTo(GlobalRole.APP_ADMIN);
+        org.assertj.core.api.Assertions.assertThat(unchangedAdmin.getGoogleSub()).isNull();
+        org.assertj.core.api.Assertions.assertThat(unchangedAdmin.getDisplayName()).isEqualTo("Admin User");
     }
 
     private void assertUnauthorized(String token) throws Exception {

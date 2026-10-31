@@ -34,6 +34,8 @@ class BugServiceTest {
     private UserRepository users;
     @Mock
     private BugHistoryRepository history;
+    @Mock
+    private BugCommentRepository comments;
     @InjectMocks
     private BugService service;
 
@@ -98,7 +100,7 @@ class BugServiceTest {
 
         verify(bug).setStatus(BugStatus.REOPENED);
         verify(bug).setResolution(null);
-        verify(bugs).save(bug);
+        verify(bugs).saveAndFlush(bug);
         verify(history).save(any(BugHistory.class));
     }
 
@@ -125,7 +127,7 @@ class BugServiceTest {
 
         verify(bug).setStatus(BugStatus.REOPENED);
         verify(bug).setResolution(null);
-        verify(bugs).save(bug);
+        verify(bugs).saveAndFlush(bug);
     }
 
     @Test
@@ -221,6 +223,104 @@ class BugServiceTest {
                 .contains("REOPEN");
         assertThat(allowedActionsFor(BugStatus.RESOLVED, 11L, ProjectRole.PROJECT_LEAD, 99L))
                 .contains("REOPEN");
+    }
+
+    @Test
+    void updateBugReturnsFreshEntityWithNewVersion() {
+        Project project = mock(Project.class);
+        Bug bug = mock(Bug.class);
+        Bug updatedBug = mock(Bug.class);
+        User reporter = mock(User.class);
+        when(project.getId()).thenReturn(7L);
+        when(reporter.getId()).thenReturn(11L);
+        when(projects.findById(7L)).thenReturn(Optional.of(project));
+        ProjectMember member = mock(ProjectMember.class);
+        when(member.getRole()).thenReturn(ProjectRole.PROJECT_LEAD);
+        when(members.findByProjectIdAndUserId(7L, 11L)).thenReturn(Optional.of(member));
+        when(bugs.findById(8L)).thenReturn(Optional.of(bug));
+        when(bug.getProject()).thenReturn(project);
+        when(bug.getVersion()).thenReturn(0L);
+        when(bug.getStatus()).thenReturn(BugStatus.OPEN);
+        when(bug.getTitle()).thenReturn("Old title");
+        when(bug.getDescription()).thenReturn("Old description");
+        when(bug.getPriority()).thenReturn(BugPriority.LOW);
+        when(bug.getSeverity()).thenReturn(BugSeverity.MINOR);
+        when(users.findById(11L)).thenReturn(Optional.of(reporter));
+
+        when(bugs.saveAndFlush(bug)).thenReturn(updatedBug);
+        when(updatedBug.getId()).thenReturn(8L);
+        when(updatedBug.getBugKey()).thenReturn("JILA-8");
+        when(updatedBug.getProject()).thenReturn(project);
+        when(updatedBug.getTitle()).thenReturn("Updated title");
+        when(updatedBug.getDescription()).thenReturn("Updated description");
+        when(updatedBug.getPriority()).thenReturn(BugPriority.HIGH);
+        when(updatedBug.getSeverity()).thenReturn(BugSeverity.CRITICAL);
+        when(updatedBug.getStatus()).thenReturn(BugStatus.OPEN);
+        when(updatedBug.getReporter()).thenReturn(reporter);
+        when(updatedBug.getVersion()).thenReturn(1L);
+        when(updatedBug.getCreatedAt()).thenReturn(java.time.Instant.now());
+        when(updatedBug.getUpdatedAt()).thenReturn(java.time.Instant.now());
+
+        UpdateBugRequest request = new UpdateBugRequest("Updated title", "Updated description",
+                BugPriority.HIGH, BugSeverity.CRITICAL, 0L);
+        BugResponse response = service.updateBug(7L, 8L, 11L, request);
+
+        assertThat(response.version()).isEqualTo(1L);
+        assertThat(response.title()).isEqualTo("Updated title");
+        assertThat(response.priority()).isEqualTo(BugPriority.HIGH);
+        assertThat(response.severity()).isEqualTo(BugSeverity.CRITICAL);
+        verify(bugs).saveAndFlush(bug);
+        verify(history).save(any(BugHistory.class));
+    }
+
+    @Test
+    void updateBugWithStaleVersionThrowsConflict() {
+        Project project = mock(Project.class);
+        Bug bug = mock(Bug.class);
+        when(project.getId()).thenReturn(7L);
+        when(projects.findById(7L)).thenReturn(Optional.of(project));
+        when(members.findByProjectIdAndUserId(7L, 11L)).thenReturn(Optional.of(mock(ProjectMember.class)));
+        when(bugs.findById(8L)).thenReturn(Optional.of(bug));
+        when(bug.getProject()).thenReturn(project);
+        when(bug.getVersion()).thenReturn(2L);
+
+        UpdateBugRequest request = new UpdateBugRequest("Updated title", "Updated description",
+                BugPriority.HIGH, BugSeverity.CRITICAL, 1L);
+
+        assertThatThrownBy(() -> service.updateBug(7L, 8L, 11L, request))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting("statusCode.value")
+                .isEqualTo(409);
+        verify(bugs, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void addCommentReturnsFreshCommentEntity() {
+        Project project = mock(Project.class);
+        Bug bug = mock(Bug.class);
+        User actor = mock(User.class);
+        BugComment savedComment = mock(BugComment.class);
+        when(project.getId()).thenReturn(7L);
+        when(actor.getId()).thenReturn(11L);
+        when(projects.findById(7L)).thenReturn(Optional.of(project));
+        when(members.findByProjectIdAndUserId(7L, 11L)).thenReturn(Optional.of(mock(ProjectMember.class)));
+        when(users.findById(11L)).thenReturn(Optional.of(actor));
+        when(bugs.findById(8L)).thenReturn(Optional.of(bug));
+        when(bug.getProject()).thenReturn(project);
+        when(comments.saveAndFlush(any(BugComment.class))).thenReturn(savedComment);
+        when(savedComment.getId()).thenReturn(101L);
+        when(savedComment.getAuthor()).thenReturn(actor);
+        when(savedComment.getBody()).thenReturn("New fresh comment");
+        when(savedComment.getCreatedAt()).thenReturn(java.time.Instant.now());
+
+        AddCommentRequest request = new AddCommentRequest("New fresh comment");
+        CommentResponse response = service.addComment(7L, 8L, 11L, request);
+
+        assertThat(response.id()).isEqualTo(101L);
+        assertThat(response.body()).isEqualTo("New fresh comment");
+        assertThat(response.authorId()).isEqualTo(11L);
+        verify(comments).saveAndFlush(any(BugComment.class));
+        verify(history).save(any(BugHistory.class));
     }
 
     private java.util.Set<String> allowedActionsFor(BugStatus status, Long actorId,

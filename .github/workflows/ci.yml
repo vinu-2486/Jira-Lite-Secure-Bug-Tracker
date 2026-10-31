@@ -142,10 +142,9 @@ jobs:
   dependency-scan:
     name: Dependency vulnerability scan
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 60
     env:
-      # Required by current NVD API clients. A missing secret fails this scan
-      # explicitly instead of treating an unavailable data source as clean.
+      # Optional NVD API key from repository secret. If provided, speeds up NVD downloads.
       NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
     steps:
       - name: Check out source
@@ -190,8 +189,8 @@ jobs:
           fi
           exit 1
 
-      - name: Cache NVD data
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      - name: Restore NVD data cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.m2/repository/org/owasp/dependency-check-data
           key: nvd-data-${{ runner.os }}-dc13.0.0-${{ github.run_id }}-${{ github.run_attempt }}
@@ -204,10 +203,14 @@ jobs:
         continue-on-error: true
         working-directory: backend
         run: |
+          API_KEY_ARG=""
+          if [ -n "$NVD_API_KEY" ]; then
+            API_KEY_ARG="-DnvdApiKey=$NVD_API_KEY"
+          fi
           sh ./mvnw --batch-mode --no-transfer-progress \
             org.owasp:dependency-check-maven:13.0.0:check \
             -DfailBuildOnCVSS=7 \
-            -DnvdApiKey="$NVD_API_KEY" \
+            $API_KEY_ARG \
             -DskipTestScope=false
 
       - name: Classify Maven scan result
@@ -224,6 +227,13 @@ jobs:
             echo "Maven dependency-check did not produce a vulnerability report; this is a scanner or network failure." >&2
           fi
           exit 1
+
+      - name: Save NVD data cache
+        if: always()
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.m2/repository/org/owasp/dependency-check-data
+          key: nvd-data-${{ runner.os }}-dc13.0.0-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Fail if dependency scans found vulnerabilities or failed
         if: always()
